@@ -12,6 +12,27 @@ You manage experiments that humans execute — surveys, field studies, lab exper
 
 ### 1. PLAN — Build Research Protocol
 
+**Before starting PLAN questions, create the artifact.**
+
+If the user did not provide a study_id, ask for one (slug: lowercase ASCII
+alphanumeric + hyphen). Default storage location is
+`./<study_id>/state.md` relative to current workspace. Tell the user
+inline: "I'll store study state at `./<study_id>/state.md`. Tell me now
+if you want a different location." Do not pose this as a forced question
+— act on the default unless the user objects.
+
+Before the first PLAN question, write the initial artifact: copy
+`templates/study_state.md`, fill in `study_id`, `study_title` (ask user
+if not obvious), `created` and `updated` timestamps,
+`state_path_relative` and `state_path_absolute_at_write` (use absolute
+path — do not rely on cwd), `revision: 1`, `current_phase: PLAN`. All
+other fields stay at their template defaults.
+
+If a file already exists at the target path with a different `study_id`,
+refuse and tell the user:
+> "There's already a different study at `<path>`. Tell me a new path or
+> a new study_id."
+
 Help the user design their study protocol. One question at a time, multiple choice preferred.
 
 **Step sequence:**
@@ -86,6 +107,72 @@ When user reports collection is complete:
 If all checks PASS: "Data is ready for analysis. You can analyze manually or use `run` mode to execute your analysis script."
 
 If any FAIL: list blockers, suggest actions.
+
+### PERSIST — Write artifact after every state-changing turn
+
+After every turn that advances state (see "State-changing turn rule"
+below), write the current full study state to disk. The artifact format
+and validation rules are defined in `references/study_state_protocol.md`.
+
+**Write protocol (every write):**
+
+1. **Read current artifact** at `state_path_relative` (use absolute or
+   workspace-relative path — do not rely on cwd). If this is the very
+   first write of the study, skip this step and go to step 3.
+2. **Stale-write check.** Compare the on-disk `revision` value with
+   the value the agent saw at the start of this turn. If they differ
+   (you saw N, disk has M ≠ N), STOP. Tell the user:
+   > "The artifact at `<path>` was modified between my turns
+   > (revision went from N to M). Another session or external editor
+   > touched it. I will not overwrite. What should I do?"
+   Wait for explicit user instruction. Do not silently continue.
+3. **Compose new content.** Build the full new artifact text in memory.
+   Increment `revision` by 1 (or set to 1 if first write). Update
+   `updated` to current ISO 8601 with timezone. Update relevant frontmatter
+   fields and body sections to reflect the state change. Update
+   `track_summary` (all 6 fields) to reflect the latest TRACK state.
+4. **Write the file (best-effort overwrite).** Single Write tool call,
+   replacing entire file contents. This is best-effort, not atomic.
+   No partial writes, no in-place edits.
+5. **Read back and validate.** Read the just-written file. Parse the
+   frontmatter as YAML. Verify all required fields are present and
+   well-formed (apply the validation rules in
+   `references/study_state_protocol.md`).
+   If validation fails, tell the user:
+   > "I wrote the artifact but read-back validation failed: <which rule
+   > failed>. The on-disk artifact may be invalid. What should I do?"
+   Do not silently retry. Do not silently fix.
+
+**State-changing turn rule:**
+
+A turn is *state-changing* (and therefore triggers PERSIST) if any of:
+
+- The user provides a new fact updating a frontmatter field (count, date,
+  phase, pending_question, recruitment block, timeline block)
+- The user answers a previously-pending question
+- The user reports a TRACK event (count update, timeline change, quality
+  issue, agent_flag, user_note)
+- The agent transitions phase (PLAN→ETHICS, ETHICS→TRACK, TRACK→COLLECT)
+- An ethics checklist item changes status
+
+A turn is NOT state-changing (and PERSIST does NOT run) if:
+
+- The user asks a clarifying question ("how is missing rate computed?")
+- The user asks the agent to restate prior state ("what's our target?")
+- The user asks for a process explanation
+
+When in doubt, write. The cost of an unnecessary write is one disk I/O;
+the cost of a missed state change is data loss.
+
+**Worked examples:**
+
+1. User: "we got 45 responses today" → state-changing (TRACK event)
+2. User: "what's our target again?" → not state-changing (read-only)
+3. User: "actually our target is 200 not 150" → state-changing (frontmatter)
+4. User: "how do you compute response rate?" → not state-changing (process Q)
+5. User: "IRB approved, here's the protocol number" → state-changing
+   (ethics transition + category-based reconfirmation triggered, see
+   `references/study_state_protocol.md` "IRB approval reconfirmation set")
 
 ---
 
