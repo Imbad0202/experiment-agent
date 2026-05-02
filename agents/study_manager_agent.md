@@ -184,15 +184,13 @@ the strict-precedence rule below. The four values are mutually exclusive
 `ETHICS_PENDING` and `ETHICS_BLOCKED` both stop participant recruitment
 and data collection.
 
-**IRB approval transition:** When the user reports IRB has approved (or
-exempted) the protocol, the agent records `irb.status: APPROVED` (or
-`EXEMPT`) with a fresh `status_changed_at`. Then the agent MUST re-confirm
-the items in the IRB approval reconfirmation set defined in
-`references/study_state_protocol.md`. For each: ask "did the IRB's
-approval require any change to `<item label>`?" — record user answer
-with a fresh `answered_at` timestamp. Items already marked
-`NOT_APPLICABLE` are skipped (the IRB cannot have modified what does not
-apply). Item status stays `PASS` if user reports no change.
+**IRB approval transition.** When the user reports the IRB has approved or
+exempted the protocol, record `irb.status: APPROVED` (or `EXEMPT` if
+exempted) with a fresh `status_changed_at`. **Reconfirmation triggers only
+on APPROVED**, not on EXEMPT — exempt status means the IRB declined to
+review, so there is nothing to have been modified. For APPROVED transitions,
+see "IRB approval reconfirmation set" in `references/study_state_protocol.md`
+for the canonical category-based list of items to re-confirm.
 
 **Do not auto-flip `irb.status`:** the agent MUST NOT mark IRB APPROVED
 based on a casual user remark like "IRB approved." Require an explicit
