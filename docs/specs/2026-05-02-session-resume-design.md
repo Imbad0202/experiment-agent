@@ -91,7 +91,11 @@ Markdown with YAML frontmatter. Same lineage as Material Passport and existing
 schema_version: 1
 study_id: <user-provided slug, e.g. "heeact-2026-q2-survey">
 study_title: <human-readable title>
-state_path: <absolute or relative path to this file, written by agent>
+state_path_relative: <path to this file relative to the repo or workspace
+  root if discoverable, else relative to cwd at write time. Canonical.>
+state_path_absolute_at_write: <absolute path to this file at last write.
+  Diagnostic only — not used for resume lookup. Helpful when the relative
+  path resolves wrong because cwd changed.>
 created: <ISO 8601 with timezone, e.g. 2026-05-02T11:30:00+08:00>
 updated: <ISO 8601 with timezone>
 revision: <int, starts at 1, increments on every write>
@@ -107,9 +111,22 @@ timeline:
   collection_start: <ISO date or null>
   collection_end_target: <ISO date or null>
   collection_end_actual: <ISO date or null, only set on COLLECT>
-track_summary: |
-  <agent-maintained running summary of the TRACK log, last ~10 events
-  condensed into 3-5 lines. Updated on every TRACK write.>
+track_summary:
+  last_event_ts: <ISO 8601 with timezone of most recent TRACK event, or null>
+  current_counts: <one-line restatement of recruitment block, e.g.
+    "45/100 completed, 7 partial, 0 excluded">
+  open_flags: <list of currently-active agent flags, e.g.
+    ["response_rate_below_50pct_at_midpoint", "missing_q7_above_15pct"],
+    or empty list>
+  recent_changes: <one-line summary of what changed in the last ~3 TRACK
+    events, e.g. "added 12 responses since 2026-04-28; missing rate climbed
+    from 8% to 17% on q7">
+  next_action: <what the agent expects to happen next, e.g.
+    "user to confirm extension of collection deadline">
+  narrative: |
+    <2-3 sentence prose summary for human readability. Optional but
+    encouraged. Used as fallback context if the structured fields above
+    are insufficient.>
 ---
 ```
 
@@ -129,24 +146,33 @@ population, instruments, timeline, analysis plan. Free-form Markdown.>
 
 ## Ethics Checklist Status
 <Each checklist item from references/irb_ethics_checklist.md.
-Format: structured YAML block, not Markdown table.>
+Format: structured YAML block, not Markdown table.
+
+Item IDs are the checklist's category.item numbers (1.1, 2.2, 5.1, etc.).
+This is the canonical ID map — see references/study_state_protocol.md for
+the full table mapping every checklist row to its stable ID.>
 
 ```yaml
 items:
-  - id: informed_consent_written
-    status: PASS | FAIL | NA
+  - id: "1.1"  # consent pathway documented
+    status: PASS | NEEDS_ACTION | NOT_APPLICABLE
     answered_at: <ISO 8601 with timezone>
     note: <short user answer>
-  - id: privacy_anonymized
-    status: PASS | FAIL | NA
+  - id: "2.2"  # secure storage location defined
+    status: PASS | NEEDS_ACTION | NOT_APPLICABLE
     answered_at: <ISO 8601 with timezone>
     note: <short>
-  # ... all checklist items ...
+  # ... all checklist items 1.1 through 6.4 ...
 irb:
-  status: NOT_SUBMITTED | SUBMITTED | APPROVED | NOT_REQUIRED
+  status: NOT_SUBMITTED | SUBMITTED | APPROVED | EXEMPT | NOT_REQUIRED
   status_changed_at: <ISO 8601 with timezone>
   approval_reference: <IRB protocol number, or null>
 ```
+
+The enum values (`PASS / NEEDS_ACTION / NOT_APPLICABLE`) and the IRB status
+values (`NOT_SUBMITTED / SUBMITTED / APPROVED / EXEMPT / NOT_REQUIRED`) match
+the source checklist exactly. Using different enums in the artifact would
+silently desync state from the checklist's documented decision rules.
 
 ## TRACK Log
 <Chronological list of user-reported events. YAML block, not Markdown table.
@@ -177,19 +203,35 @@ back into structured fields.
 `ethics_status` is **derived**, not stored as the source of truth.
 
 Each turn the agent reads the Ethics Checklist Status YAML block from the
-artifact body and computes:
+artifact body and computes ethics_status using the rules **already
+documented in `references/irb_ethics_checklist.md`**. The state spec does
+not invent new derivation logic — it mirrors the checklist's rules so that
+the artifact stays consistent with the checklist that produced it:
 
-- `READY` iff every checklist item has `status: PASS` AND
-  `irb.status: APPROVED` (or `NOT_REQUIRED`)
-- `ETHICS_PENDING` iff the only outstanding item is `irb.status: SUBMITTED`
-- `ETHICS_BLOCKED` iff any checklist item has `status: FAIL`
+- `READY` iff all required items are `PASS` or `NOT_APPLICABLE` AND
+  `irb.status` is `APPROVED`, `EXEMPT`, or `NOT_REQUIRED`
+- `ETHICS_BLOCKED` iff any item in categories 1, 2, or 3 has
+  `status: NEEDS_ACTION` (these are the CRITICAL categories per the
+  checklist), OR any applicable item in category 4 has `NEEDS_ACTION`
+- `ETHICS_PENDING` iff `irb.status` is `SUBMITTED` or `NOT_SUBMITTED` while
+  required, OR any item in categories 5.2-6.4 has `NEEDS_ACTION` (these
+  block participant recruitment but do not constitute participant-protection
+  violations)
 - `NOT_YET_ASSESSED` iff the Ethics Checklist Status section has no `items`
   populated yet
+
+Note: there is no `FAIL` enum value. The source checklist uses
+`NEEDS_ACTION` for "not yet satisfied." `BLOCKED` and `PENDING` are
+distinguished by **which category** the `NEEDS_ACTION` lives in, not by a
+separate enum value on the item itself. This is exactly how the checklist
+documents the rules at the top of `references/irb_ethics_checklist.md`.
 
 Why this matters: the original design treated frontmatter `ethics_status` as
 trustable. Codex correctly pointed out that an externally-edited artifact
 could lie. Deriving from the per-item state means a tampered or partially
 edited artifact cannot silently claim READY without all the items lining up.
+Mirroring the checklist's enum values (rather than inventing new ones) means
+the artifact never drifts from the source-of-truth definitions.
 
 Implication for PR 1's "ethics-status-cannot-be-auto-upgraded" rule: the rule
 is now enforced by data, not just by prompt instruction. To move from
@@ -201,19 +243,35 @@ fails, the YAML schema makes the misstep visible (no timestamp = invalid).
 
 #### Affected items on IRB approval
 
-When `irb.status` transitions to APPROVED, the agent MUST re-confirm these
-four items by asking the user (cannot be silently inherited from prior PASS):
+When `irb.status` transitions to APPROVED, the agent MUST re-confirm a
+subset of checklist items, because IRB review commonly modifies the
+protocol as a condition of approval. The reconfirmation set is defined by
+**checklist category**, not by a hand-picked flat list of items:
 
-1. `informed_consent_written` — did the approved consent form match what was
-   submitted, or were revisions requested?
-2. `privacy_storage_location` — did the approved protocol change where data is
-   stored?
-3. `privacy_retention_period` — did the approved protocol change retention?
-4. `risk_mitigation` — did the IRB add risk-mitigation requirements?
+1. **Category 1 (Informed Consent), all applicable items** — IRB very often
+   revises the consent form (wording, language accessibility, online
+   mechanism, minor assent)
+2. **Category 2 (Privacy and Data Protection), items 2.2 / 2.3 / 2.4 / 2.5**
+   — IRB often requires changes to storage location, retention, access
+   control, transfer method
+3. **Category 3 (Risk Assessment), items 3.4 / 3.5 / 3.6** — IRB often adds
+   risk-mitigation requirements, debriefing, or support-resource changes
+4. **Category 4 (Vulnerable Populations), all applicable items** — if any
+   vulnerable population is involved, IRB scrutiny here is high
+5. **Category 5.2 (Protocol Registration)** — some IRBs require registry
+   listing as a condition of approval
 
-These four are the items that IRB review most commonly modifies. The list is
-defined in `references/study_state_protocol.md` and is the only place agents
-should look for "what to re-confirm on IRB approval."
+Items NOT in the reconfirmation set: 1.1 if it was already approved waiver/
+exempt, items already marked NOT_APPLICABLE, category 6 (data management
+plan — not typically modified by IRB approval).
+
+The agent's reconfirmation prompt for each item is "did the IRB's approval
+require any change to `<item description>`?" — the user answers, the agent
+records a new `answered_at` timestamp. If unchanged, status stays PASS with
+a fresh timestamp showing it was reconfirmed.
+
+This list lives in `references/study_state_protocol.md` and is the only
+place agents should look for the IRB-approval reconfirmation rule.
 
 ---
 
@@ -264,16 +322,23 @@ discipline; the runtime provides Read/Write tools.
 3. **Compose new content.** Build the full new artifact text in memory.
    Increment `revision` by 1. Update `updated` to current ISO 8601 with
    timezone.
-4. **Write the file.** Overwrite atomically (single Write tool call —
-   no in-place edits, no partial writes).
+4. **Write the file (best-effort overwrite).** Single Write tool call,
+   replacing the entire file contents — no in-place edits. This is
+   *best-effort*, not atomic. Prompt-only agents have no atomicity
+   guarantee from the host runtime. A crash between read and write can
+   leave the file in any state. The next-step read-back is the only
+   correctness check.
 5. **Read back and validate.** Read the just-written file. Parse the
    frontmatter and verify required fields are present and well-formed.
    If validation fails, the agent MUST tell the user the write produced
    invalid output and ask for guidance. Do not silently retry.
 
-This is not transactional in the database sense (the host LLM tools
-provide no locking or atomicity guarantees), but it catches the common
-failure modes: concurrent writes, partial writes, schema drift.
+This is not transactional. The host LLM tools provide no locking or
+atomicity guarantees. The combination (read-current → revision check →
+overwrite → read-back validate) catches the common failure modes —
+concurrent writes, partial writes, schema drift — but not all of them.
+A truncated mid-write is the residual risk; PR 1 documents it rather
+than pretending to solve it.
 
 ---
 
@@ -433,18 +498,43 @@ modes are observed.
 
 ---
 
-## Open questions for user review
+## Resolved design decisions (formerly open questions)
 
-1. The 4-item IRB-approval re-confirmation list (consent / storage /
-   retention / risk_mitigation) — does this match HEEACT IRB practice?
-   If your IRB modifies different items more often, the list should be
-   tuned.
-2. `track_summary` is agent-maintained ("running summary, last ~10 events
-   condensed into 3-5 lines"). Should this have a structured format, or
-   trust the agent to produce reasonable prose?
-3. `state_path` field in frontmatter — should it be absolute or relative?
-   Relative survives directory moves; absolute is unambiguous on resume.
-   PR 1 picks relative as default; flag if you want absolute.
+These were posed as open questions in the first draft. Round 2 codex review
+gave specific recommendations on all three; the user (via brief asynchronous
+review) accepted the codex direction. They are now part of the spec, not
+open questions.
+
+1. **IRB-approval re-confirmation list** — resolved as a category-based
+   reconfirmation set, not a flat 4-item list (see "Affected items on IRB
+   approval" above). The original 4-item list was too narrow; it would have
+   missed IRB-mandated changes to vulnerable population handling,
+   recruitment mechanism, access control, and instrument wording.
+2. **track_summary format** — resolved as structured fields
+   (`last_event_ts`, `current_counts`, `open_flags`, `recent_changes`,
+   `next_action`) plus an optional prose `narrative` field (see
+   frontmatter schema above). Prose-only would have allowed quality
+   issues to disappear from the summary; structured fields force the
+   important signals to surface.
+3. **state_path** — resolved as two fields: `state_path_relative`
+   (canonical, survives workspace moves) and `state_path_absolute_at_write`
+   (diagnostic, helps when cwd resolves wrong). Single-field designs each
+   broke a real failure mode; two fields cost two lines of frontmatter.
+
+---
+
+## Canonical checklist ID map
+
+This spec uses the checklist's own `category.item` numbers (1.1 through
+6.4) as the stable IDs in the artifact. The full mapping of every
+checklist row to its ID and human-readable label MUST live in
+`references/study_state_protocol.md` so the implementation has a single
+source of truth and cannot drift from `references/irb_ethics_checklist.md`.
+
+When `references/irb_ethics_checklist.md` adds, removes, or renumbers an
+item, the ID map in `references/study_state_protocol.md` must update in
+the same change. The state spec does not maintain its own copy of the
+checklist — it points at the checklist as authority.
 
 ---
 
@@ -453,8 +543,14 @@ modes are observed.
 | Date | Decision | Rationale |
 |------|----------|-----------|
 | 2026-05-02 | PR 1 = single-study, single-window, happy path | Avoid scope creep; ship something dogfoodable |
-| 2026-05-02 | Ethics status as derived field, not frontmatter source of truth | Codex review caught that frontmatter could be tampered. Per-item state with timestamps makes tampering visible |
+| 2026-05-02 | Ethics status as derived field, not frontmatter source of truth | Codex round 1 review caught that frontmatter could be tampered. Per-item state with timestamps makes tampering visible |
+| 2026-05-02 | Mirror `irb_ethics_checklist.md` enums (PASS / NEEDS_ACTION / NOT_APPLICABLE) and category-based derivation rules exactly | Codex round 2 caught that the first draft invented a different enum (PASS/FAIL/NA) and incorrect derivation logic, which would silently desync state from the checklist |
+| 2026-05-02 | Use checklist's `category.item` numbers as canonical IDs | Codex round 2 caught hand-invented IDs in the first draft. Numbered IDs prevent drift between checklist and state spec |
+| 2026-05-02 | Best-effort overwrite, not atomic | Codex round 2 caught the "atomic" claim. Prompt-only agents have no atomicity guarantee from the host runtime; honest framing is "best-effort + read-back validate" |
 | 2026-05-02 | YAML for Ethics + TRACK, Markdown for Protocol Summary | LLMs drift on free-form Markdown tables across many turns; YAML survives reparsing. Narrative prose stays Markdown |
 | 2026-05-02 | Bounded resume context (summary + last 5 events) | Multi-month studies accumulate 100s of TRACK events; full log per resume blows context |
 | 2026-05-02 | Revision counter for stale-write detection | Two Claude windows on same artifact is common, not edge case. Simple counter catches it |
+| 2026-05-02 | Category-based IRB-approval reconfirmation, not flat 4-item list | Codex round 2: flat list misses IRB's actual modification patterns (vulnerable populations, recruitment, access control, instruments). Categories track checklist structure |
+| 2026-05-02 | Structured `track_summary` with optional prose `narrative` | Codex round 2: prose-only summary lets quality regressions disappear. Structured fields force critical signals to surface |
+| 2026-05-02 | Two `state_path` fields (relative canonical + absolute diagnostic) | Codex round 2: each single-field design broke a real failure mode (workspace move vs wrong cwd). Two fields, two lines, no real cost |
 | 2026-05-02 | Out-of-scope situations get explicit refusal behavior, not silent failure | User must know what PR 1 won't recover from |
