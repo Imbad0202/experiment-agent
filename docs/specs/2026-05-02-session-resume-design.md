@@ -8,6 +8,13 @@
 
 ---
 
+<!-- PREAMBLE-NOTE: Several sections in this spec are inlined verbatim into
+references/study_state_protocol.md for agent UX (single-file protocol
+reference). Sections marked ALSO-INLINED-IN are the sources; their
+counterparts in the protocol doc are marked INLINE-FROM-SPEC. When editing
+either side, update both. Future CI check may compare automatically via
+`grep -A 1 "ALSO-INLINED-IN"` then diff. -->
+
 ## Problem
 
 Today `study_manager_agent` runs the PLAN→ETHICS→TRACK→COLLECT loop entirely
@@ -81,6 +88,7 @@ for existing v1.0.1 users.
 
 ### Artifact format
 
+<!-- ALSO-INLINED-IN: references/study_state_protocol.md "Artifact format" section -->
 Markdown with YAML frontmatter. Same lineage as Material Passport and existing
 `templates/study_protocol.md`.
 
@@ -139,7 +147,7 @@ of scope for PR 1; the agent never writes that value.
 
 #### Body sections (fixed order, all required)
 
-```markdown
+~~~markdown
 ## Protocol Summary
 <Cumulative protocol notes from PLAN phase: RQ, design, variables,
 population, instruments, timeline, analysis plan. Free-form Markdown.>
@@ -215,13 +223,14 @@ events:
 ## COLLECT Readiness
 <Only filled when current_phase=COLLECT. Four checks: sample_size, missing_data,
 format, timeline. Each PASS | FAIL | WARN with one-line justification.>
-```
+~~~
 
 Why YAML for the mutable lists (Ethics + TRACK) but Markdown for Protocol
 Summary: codex's review correctly flagged that LLMs drift on free-form Markdown
 table format across many turns. Structured YAML survives reparsing. Protocol
 Summary is narrative human prose — Markdown is fine because it's not parsed
 back into structured fields.
+<!-- /ALSO-INLINED-IN: Artifact format -->
 
 ---
 
@@ -290,6 +299,7 @@ fails, the YAML schema makes the misstep visible (no timestamp = invalid).
 
 #### Affected items on IRB approval
 
+<!-- ALSO-INLINED-IN: references/study_state_protocol.md "IRB approval reconfirmation set" section -->
 When `irb.status` transitions to APPROVED, the agent MUST re-confirm a
 subset of checklist items, because IRB review commonly modifies the
 protocol as a condition of approval. The reconfirmation set is defined by
@@ -323,11 +333,13 @@ a fresh timestamp showing it was reconfirmed.
 
 This list lives in `references/study_state_protocol.md` and is the only
 place agents should look for the IRB-approval reconfirmation rule.
+<!-- /ALSO-INLINED-IN: IRB approval reconfirmation set -->
 
 ---
 
 ### State-changing turn rule
 
+<!-- ALSO-INLINED-IN: references/study_state_protocol.md "State-changing turn rule" section -->
 The agent writes to the artifact only on **state-changing turns**. A turn is
 state-changing if any of these are true:
 
@@ -356,11 +368,13 @@ Worked examples (in `references/study_state_protocol.md`):
 5. User says "IRB approved, here's the protocol number" → write (ethics
    transition + category-based reconfirmation triggered, see "Affected
    items on IRB approval" above)
+<!-- /ALSO-INLINED-IN: State-changing turn rule -->
 
 ---
 
 ### Write protocol (every write)
 
+<!-- ALSO-INLINED-IN: references/study_state_protocol.md "Write protocol" section -->
 Every write follows this sequence. The agent's prompt enforces it as
 discipline; the runtime provides Read/Write tools.
 
@@ -391,11 +405,13 @@ overwrite → read-back validate) catches the common failure modes —
 concurrent writes, partial writes, schema drift — but not all of them.
 A truncated mid-write is the residual risk; PR 1 documents it rather
 than pretending to solve it.
+<!-- /ALSO-INLINED-IN: Write protocol -->
 
 ---
 
 ### Resume protocol
 
+<!-- ALSO-INLINED-IN: references/study_state_protocol.md "Resume protocol" section -->
 User invokes resume with one of:
 
 - `resume <study_id>` → agent first tries `./<study_id>/state.md`; if not
@@ -426,11 +442,13 @@ Why bounded context (item 2): a multi-month study can accumulate hundreds
 of TRACK events. Reading the full log into context every resume wastes
 tokens and risks blowing context on long studies. The full log stays on
 disk for audit; resume only needs the recent picture.
+<!-- /ALSO-INLINED-IN: Resume protocol -->
 
 ---
 
 ### Validation rules
 
+<!-- ALSO-INLINED-IN: references/study_state_protocol.md "Validation rules" section -->
 An artifact is INVALID if any of these hold. The agent refuses to operate
 on invalid artifacts (refuses to resume, refuses to write).
 
@@ -449,6 +467,7 @@ on invalid artifacts (refuses to resume, refuses to write).
 
 The agent's failure message MUST tell the user which specific rule failed,
 so the user can decide whether to fix manually or recreate the study.
+<!-- /ALSO-INLINED-IN: Validation rules -->
 
 ---
 
@@ -501,6 +520,7 @@ normalized slug to the user before proceeding.
 
 ## Out-of-scope behaviors (PR 1 explicit non-handling)
 
+<!-- ALSO-INLINED-IN: references/study_state_protocol.md "Out-of-scope behaviors" section -->
 These situations have defined refusal behavior in PR 1 — not graceful
 recovery. PR 2 may add recovery.
 
@@ -514,6 +534,7 @@ recovery. PR 2 may add recovery.
 - **Two Claude sessions writing the same artifact concurrently**:
   detected via revision counter on the second writer. Second writer
   refuses, tells user. No automatic merge.
+<!-- /ALSO-INLINED-IN: Out-of-scope behaviors -->
 
 ---
 

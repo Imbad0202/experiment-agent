@@ -10,6 +10,11 @@ When this document and the design spec
 (`docs/specs/2026-05-02-session-resume-design.md`) disagree, the spec wins
 and this document is wrong — open a fix.
 
+<!-- PREAMBLE-NOTE: Sections marked INLINE-FROM-SPEC are duplicated from
+docs/specs/2026-05-02-session-resume-design.md for agent UX (single-file
+protocol reference). When editing either side, update both. Future CI check
+may compare automatically via `grep -A 1 "INLINE-FROM-SPEC"` then diff. -->
+
 ## Canonical checklist ID map
 
 The artifact uses the source checklist's `category.item` numbers (1.1
@@ -58,10 +63,16 @@ as the single authority for IDs.
 | 6.3 | Data Management Plan | Analysis plan pre-specified |
 | 6.4 | Data Management Plan | Data sharing plan |
 
-Note: Item 5.1's enum (Approved / Submitted / Not yet submitted / Exempt) is incompatible with the items enum (PASS / NEEDS_ACTION / NOT_APPLICABLE), so 5.1 is represented in the artifact's `irb` block rather than its `items` list. The map row above is for ID-lookup only; do not write a 5.1 entry into `items`.
+Note: Item 5.1's enum (Approved / Submitted / Not yet submitted / Exempt)
+is incompatible with the items enum (PASS / NEEDS_ACTION / NOT_APPLICABLE),
+so 5.1 is represented in the artifact's `irb` block rather than its `items`
+list. The map row above is for ID-lookup only; do not write a 5.1 entry
+into `items`.
 
 ## Artifact format
 
+<!-- INLINE-FROM-SPEC: Artifact format -->
+<!-- spec source: docs/specs/2026-05-02-session-resume-design.md "Artifact format" section -->
 Markdown with YAML frontmatter. Same lineage as Material Passport and existing
 `templates/study_protocol.md`.
 
@@ -120,7 +131,7 @@ of scope for PR 1; the agent never writes that value.
 
 ### Body sections (fixed order, all required)
 
-```markdown
+~~~markdown
 ## Protocol Summary
 <Cumulative protocol notes from PLAN phase: RQ, design, variables,
 population, instruments, timeline, analysis plan. Free-form Markdown.>
@@ -196,7 +207,7 @@ events:
 ## COLLECT Readiness
 <Only filled when current_phase=COLLECT. Four checks: sample_size, missing_data,
 format, timeline. Each PASS | FAIL | WARN with one-line justification.>
-```
+~~~
 
 Why YAML for the mutable lists (Ethics + TRACK) but Markdown for Protocol
 Summary: codex's review correctly flagged that LLMs drift on free-form Markdown
@@ -206,6 +217,7 @@ back into structured fields.
 
 See also `templates/study_state.md` (skeleton) and
 `templates/study_state.example.md` (worked example).
+<!-- /INLINE-FROM-SPEC: Artifact format -->
 
 ## Ethics derivation rules
 
@@ -221,6 +233,8 @@ SUBMITTED) resolve unambiguously — first matching rule wins.
 
 ## IRB approval reconfirmation set
 
+<!-- INLINE-FROM-SPEC: IRB approval reconfirmation set -->
+<!-- spec source: docs/specs/2026-05-02-session-resume-design.md "Affected items on IRB approval" section -->
 When `irb.status` transitions to APPROVED, these item IDs MUST
 be reconfirmed by re-asking the user (cannot be inherited from prior PASS):
 
@@ -239,9 +253,12 @@ approval" section explains the rationale).
 For each reconfirmed item the agent asks: "did the IRB's approval require
 any change to <item label from the ID map above>?" If unchanged, status
 stays PASS with a fresh `answered_at` timestamp.
+<!-- /INLINE-FROM-SPEC: IRB approval reconfirmation set -->
 
 ## Write protocol
 
+<!-- INLINE-FROM-SPEC: Write protocol -->
+<!-- spec source: docs/specs/2026-05-02-session-resume-design.md "Write protocol (every write)" section -->
 Every write follows this 5-step sequence. The agent's prompt enforces it as
 discipline; the runtime provides Read/Write tools.
 
@@ -271,9 +288,12 @@ check → compose → overwrite → read-back validate) catches the common
 failure modes — concurrent writes, partial writes, schema drift — but not
 all of them. A truncated mid-write is the residual risk; PR 1 documents it
 rather than pretending to solve it.
+<!-- /INLINE-FROM-SPEC: Write protocol -->
 
 ## Resume protocol
 
+<!-- INLINE-FROM-SPEC: Resume protocol -->
+<!-- spec source: docs/specs/2026-05-02-session-resume-design.md "Resume protocol" section -->
 User invokes resume with one of:
 
 - `resume <study_id>` → agent first tries `./<study_id>/state.md`; if not
@@ -302,9 +322,12 @@ Why bounded context (step 2): a multi-month study can accumulate hundreds
 of TRACK events. Reading the full log into context every resume wastes
 tokens and risks blowing context on long studies. The full log stays on
 disk for audit; resume only needs the recent picture.
+<!-- /INLINE-FROM-SPEC: Resume protocol -->
 
 ## Validation rules
 
+<!-- INLINE-FROM-SPEC: Validation rules -->
+<!-- spec source: docs/specs/2026-05-02-session-resume-design.md "Validation rules" section -->
 An artifact is INVALID if any of these hold. The agent refuses to operate
 on invalid artifacts (refuses to resume, refuses to write).
 
@@ -323,6 +346,7 @@ on invalid artifacts (refuses to resume, refuses to write).
 
 The agent's failure message MUST tell the user which specific rule failed,
 so the user can decide whether to fix manually or recreate the study.
+<!-- /INLINE-FROM-SPEC: Validation rules -->
 
 ## Prompt-injection guard
 
@@ -343,6 +367,8 @@ hardening (PR 2 or later) may add structural escaping.
 
 ## State-changing turn rule
 
+<!-- INLINE-FROM-SPEC: State-changing turn rule -->
+<!-- spec source: docs/specs/2026-05-02-session-resume-design.md "State-changing turn rule" section -->
 The agent writes to the artifact only on **state-changing turns**. A turn is
 state-changing if any of these are true:
 
@@ -371,9 +397,12 @@ Worked examples:
 5. User says "IRB approved, here's the protocol number" → write (ethics
    transition + category-based reconfirmation triggered, see "IRB approval
    reconfirmation set" above)
+<!-- /INLINE-FROM-SPEC: State-changing turn rule -->
 
 ## Out-of-scope behaviors for v1.1.0 (PR 1)
 
+<!-- INLINE-FROM-SPEC: Out-of-scope behaviors -->
+<!-- spec source: docs/specs/2026-05-02-session-resume-design.md "Out-of-scope behaviors (PR 1 explicit non-handling)" section -->
 These situations have **defined refusal behavior**, not graceful recovery.
 PR 2 may add recovery. The agent MUST surface the refusal explicitly to
 the user; silent failure is a bug.
@@ -387,6 +416,7 @@ the user; silent failure is a bug.
 | Slug collision (different study at default path) | Refuse. Ask user for new path or new study_id. |
 | Multi-study concurrent in same workspace | Out of scope for v1.1.0. PR 2. |
 | Explicit ethics-upgrade command | Out of scope. v1.1.0 handles ethics transitions through the natural ETHICS phase flow. |
+<!-- /INLINE-FROM-SPEC: Out-of-scope behaviors -->
 
 ## Schema versioning
 
