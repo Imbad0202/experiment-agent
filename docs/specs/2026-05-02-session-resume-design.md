@@ -164,15 +164,22 @@ items:
     note: <short>
   # ... all checklist items 1.1 through 6.4 ...
 irb:
-  status: NOT_SUBMITTED | SUBMITTED | APPROVED | EXEMPT | NOT_REQUIRED
+  required: <true | false>
+  status: NOT_SUBMITTED | SUBMITTED | APPROVED | EXEMPT
   status_changed_at: <ISO 8601 with timezone>
   approval_reference: <IRB protocol number, or null>
 ```
 
-The enum values (`PASS / NEEDS_ACTION / NOT_APPLICABLE`) and the IRB status
-values (`NOT_SUBMITTED / SUBMITTED / APPROVED / EXEMPT / NOT_REQUIRED`) match
-the source checklist exactly. Using different enums in the artifact would
-silently desync state from the checklist's documented decision rules.
+The item enum values (`PASS / NEEDS_ACTION / NOT_APPLICABLE`) and the IRB
+status values (`NOT_SUBMITTED / SUBMITTED / APPROVED / EXEMPT`) match the
+source checklist (`references/irb_ethics_checklist.md` line 67) exactly.
+
+The `irb.required` field is a boolean flag, not part of the IRB status
+enum. The source checklist phrases this as "when required" inline in the
+derivation rules; the artifact represents it as an explicit boolean so
+the derivation is computable from the YAML alone. When `irb.required:
+false`, IRB status is not consulted by the derivation rules (the
+checklist's "when required" condition is satisfied vacuously).
 
 ## TRACK Log
 <Chronological list of user-reported events. YAML block, not Markdown table.
@@ -206,19 +213,34 @@ Each turn the agent reads the Ethics Checklist Status YAML block from the
 artifact body and computes ethics_status using the rules **already
 documented in `references/irb_ethics_checklist.md`**. The state spec does
 not invent new derivation logic — it mirrors the checklist's rules so that
-the artifact stays consistent with the checklist that produced it:
+the artifact stays consistent with the checklist that produced it.
 
-- `READY` iff all required items are `PASS` or `NOT_APPLICABLE` AND
-  `irb.status` is `APPROVED`, `EXEMPT`, or `NOT_REQUIRED`
-- `ETHICS_BLOCKED` iff any item in categories 1, 2, or 3 has
-  `status: NEEDS_ACTION` (these are the CRITICAL categories per the
-  checklist), OR any applicable item in category 4 has `NEEDS_ACTION`
-- `ETHICS_PENDING` iff `irb.status` is `SUBMITTED` or `NOT_SUBMITTED` while
-  required, OR any item in categories 5.2-6.4 has `NEEDS_ACTION` (these
-  block participant recruitment but do not constitute participant-protection
-  violations)
-- `NOT_YET_ASSESSED` iff the Ethics Checklist Status section has no `items`
-  populated yet
+The four possible ethics_status values are mutually exclusive. Evaluation
+is **strictly ordered** — the first rule that matches wins, even if a
+later rule also would have matched. This precedence is required because
+the underlying conditions can overlap (e.g., a critical item NEEDS_ACTION
+AND IRB still SUBMITTED — that's BLOCKED, not PENDING). Without explicit
+precedence, derived status would be ambiguous.
+
+Evaluation order:
+
+1. **`NOT_YET_ASSESSED`** — the Ethics Checklist Status section has no
+   `items` populated yet, or fewer than the full checklist roster.
+   (Highest precedence: nothing else can be derived from incomplete data.)
+2. **`ETHICS_BLOCKED`** — any item in categories 1, 2, or 3 has
+   `status: NEEDS_ACTION` (these are the CRITICAL categories per the
+   checklist), OR any applicable item in category 4 has `NEEDS_ACTION`.
+   (Second precedence: critical participant-protection issues override
+   institutional-process concerns.)
+3. **`ETHICS_PENDING`** — `irb.required: true` AND `irb.status` is
+   `SUBMITTED` or `NOT_SUBMITTED`, OR any item in categories 5.2-6.4 has
+   `NEEDS_ACTION`. These block participant recruitment but do not
+   constitute participant-protection violations.
+4. **`READY`** — all of the above are false. Equivalently: every item is
+   `PASS` or `NOT_APPLICABLE`, AND (if `irb.required: true`) `irb.status`
+   is `APPROVED` or `EXEMPT`. If `irb.required: false`, IRB status is
+   not consulted (the checklist's "when required" condition is satisfied
+   vacuously).
 
 Note: there is no `FAIL` enum value. The source checklist uses
 `NEEDS_ACTION` for "not yet satisfied." `BLOCKED` and `PENDING` are
@@ -261,9 +283,13 @@ protocol as a condition of approval. The reconfirmation set is defined by
 5. **Category 5.2 (Protocol Registration)** — some IRBs require registry
    listing as a condition of approval
 
-Items NOT in the reconfirmation set: 1.1 if it was already approved waiver/
-exempt, items already marked NOT_APPLICABLE, category 6 (data management
-plan — not typically modified by IRB approval).
+Items NOT in the reconfirmation set: items already marked
+`NOT_APPLICABLE` (the IRB cannot have modified what does not apply), and
+all of category 6 (data management plan — not typically modified by IRB
+approval). All other items in the categories above are reconfirmed,
+including 1.1 even when previously approved as a waiver path (the IRB
+may have changed the waiver justification or required a different
+consent pathway).
 
 The agent's reconfirmation prompt for each item is "did the IRB's approval
 require any change to `<item description>`?" — the user answers, the agent
@@ -303,7 +329,8 @@ Worked examples (in `references/study_state_protocol.md`):
 3. User says "actually our target is 200 not 150" → write (frontmatter change)
 4. User asks "how do you compute response rate?" → no write (process Q)
 5. User says "IRB approved, here's the protocol number" → write (ethics
-   transition + 4-item re-confirmation triggered)
+   transition + category-based reconfirmation triggered, see "Affected
+   items on IRB approval" above)
 
 ---
 
