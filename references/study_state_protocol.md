@@ -10,10 +10,14 @@ When this document and the design spec
 (`docs/specs/2026-05-02-session-resume-design.md`) disagree, the spec wins
 and this document is wrong — open a fix.
 
-<!-- PREAMBLE-NOTE: Sections marked INLINE-FROM-SPEC are duplicated from
-docs/specs/2026-05-02-session-resume-design.md for agent UX (single-file
-protocol reference). When editing either side, update both. Future CI check
-may compare automatically via `grep -A 1 "INLINE-FROM-SPEC"` then diff. -->
+<!-- PREAMBLE-NOTE: Sections marked INLINE-FROM-SPEC have parallel
+counterparts in docs/specs/2026-05-02-session-resume-design.md (marked
+ALSO-INLINED-IN there). The two versions describe the same rules but may
+differ in wording, section order, or framing — this doc tunes for agent
+operational use, the spec tunes for design rationale. When editing rule
+semantics on either side, update both. Sentinel pairs let a future grep-
+based check flag pairs whose RULES have drifted (not stylistic
+differences). -->
 
 ## Canonical checklist ID map
 

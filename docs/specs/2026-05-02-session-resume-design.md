@@ -8,12 +8,13 @@
 
 ---
 
-<!-- PREAMBLE-NOTE: Several sections in this spec are inlined verbatim into
-references/study_state_protocol.md for agent UX (single-file protocol
-reference). Sections marked ALSO-INLINED-IN are the sources; their
-counterparts in the protocol doc are marked INLINE-FROM-SPEC. When editing
-either side, update both. Future CI check may compare automatically via
-`grep -A 1 "ALSO-INLINED-IN"` then diff. -->
+<!-- PREAMBLE-NOTE: Sections marked ALSO-INLINED-IN have parallel
+counterparts in references/study_state_protocol.md (marked INLINE-FROM-SPEC
+there). The two versions describe the same rules but may differ in wording,
+section order, or framing — neither is required to be a verbatim copy. When
+editing rule semantics on either side, update both. The sentinel pairs
+exist so a future grep-based check can flag pairs whose RULES (not
+wording) have drifted. -->
 
 ## Problem
 
