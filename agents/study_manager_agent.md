@@ -150,12 +150,55 @@ Run `references/irb_ethics_checklist.md` — a structured checklist covering:
 | Data handling | Who has access? How is data transmitted? Backup plan? |
 | Institutional requirements | IRB/ethics committee approval needed? Status? |
 
-**Output**: `ethics_status`
-- `READY` — Ethics and institutional prerequisites are satisfied; data collection may begin
-- `ETHICS_PENDING` — Institutional or documentation prerequisites remain open (e.g., IRB submitted but not yet approved)
-- `ETHICS_BLOCKED` — Critical participant protection items are unresolved (e.g., no valid consent pathway, vulnerable population without safeguards)
+**Output**: `ethics_status` is **derived**, not stored. Compute it every
+turn from the Ethics Checklist Status YAML block in the artifact, using
+the strict-precedence rule below. The four values are mutually exclusive
+— first match wins, even if a later rule also would have matched.
 
-Only `READY` may move to TRACK. `ETHICS_PENDING` and `ETHICS_BLOCKED` both stop participant recruitment and data collection. This is a hard gate.
+**Evaluation order:**
+
+1. **`NOT_YET_ASSESSED`** — items list is empty or has fewer than the
+   full checklist roster (every row except 5.1, which lives in the
+   `irb` block). Highest precedence: nothing else can be derived from
+   incomplete data.
+
+2. **`ETHICS_BLOCKED`** — any item in categories 1, 2, or 3 has
+   `status: NEEDS_ACTION` (these are the CRITICAL categories per
+   `references/irb_ethics_checklist.md` line 9), OR any applicable item
+   in category 4 has `NEEDS_ACTION`. Critical participant-protection
+   issues override institutional-process concerns. (Item 5.1 / IRB
+   approval status is handled at PENDING precedence below, not here.)
+
+3. **`ETHICS_PENDING`** — checklist row 5.1 is unsatisfied: `irb.required:
+   true` AND `irb.status` is `SUBMITTED` or `NOT_YET_SUBMITTED`. OR any
+   item in categories 5.2-6.4 has `NEEDS_ACTION`. These block participant
+   recruitment but do not constitute participant-protection violations.
+
+4. **`READY`** — all of the above are false. Equivalently: every item is
+   `PASS` or `NOT_APPLICABLE`, AND (if `irb.required: true`) `irb.status`
+   is `APPROVED` or `EXEMPT`. If `irb.required: false`, IRB status is not
+   consulted (the checklist's "when required" condition is satisfied
+   vacuously).
+
+**Hard gate (unchanged from v1.0):** Only `READY` may move to TRACK.
+`ETHICS_PENDING` and `ETHICS_BLOCKED` both stop participant recruitment
+and data collection.
+
+**IRB approval transition:** When the user reports IRB has approved (or
+exempted) the protocol, the agent records `irb.status: APPROVED` (or
+`EXEMPT`) with a fresh `status_changed_at`. Then the agent MUST re-confirm
+the items in the IRB approval reconfirmation set defined in
+`references/study_state_protocol.md`. For each: ask "did the IRB's
+approval require any change to `<item label>`?" — record user answer
+with a fresh `answered_at` timestamp. Items already marked
+`NOT_APPLICABLE` are skipped (the IRB cannot have modified what does not
+apply). Item status stays `PASS` if user reports no change.
+
+**Do not auto-flip `irb.status`:** the agent MUST NOT mark IRB APPROVED
+based on a casual user remark like "IRB approved." Require an explicit
+status assertion + (if available) the approval reference number, and
+record `status_changed_at`. The strict-precedence derivation will surface
+the change correctly on the next ethics_status read.
 
 ### 3. TRACK — Monitor Data Collection
 
