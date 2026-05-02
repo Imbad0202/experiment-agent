@@ -1,10 +1,7 @@
 # Changelog
 
-## Unreleased — v1.1.0 (target)
+## v1.1.0 (2026-05-02)
 
-**Status (2026-05-02)**: PR 1 implementation complete on branch
-`feat/v1.2.3-session-resume-spec`. All 10 tasks landed (ID map +
-templates + agent prompt + SKILL.md). Ready for PR open and dogfood.
 PR 2 (hardening: external-edit detection, multi-study, slug-collision
 recovery, explicit ethics-upgrade command, schema migration) deferred
 until ≥2 weeks of v1.1.0 dogfood evidence.
