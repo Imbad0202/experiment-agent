@@ -41,7 +41,6 @@ Markdown. Build up across PLAN turns.>
 from references/study_state_protocol.md. Item 5.1 is NOT in this list —
 it lives in the `irb` block below.>
 
-~~~markdown
 ```yaml
 items:
   - id: "1.1"
@@ -57,7 +56,6 @@ irb:
   status_changed_at: null
   approval_reference: null
 ```
-~~~
 
 ## TRACK Log
 
