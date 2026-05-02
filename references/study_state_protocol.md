@@ -50,7 +50,7 @@ as the single authority for IDs.
 | 4.3 | Vulnerable Populations | Patients: therapeutic misconception addressed |
 | 4.4 | Vulnerable Populations | Students/employees: power differential mitigated |
 | 4.5 | Vulnerable Populations | Cognitively impaired: capacity assessment |
-| 5.1 | Institutional Requirements | IRB/ethics committee approval status (lives in artifact `irb` block, not `items`) |
+| 5.1 | Institutional Requirements | IRB/ethics committee approval status |
 | 5.2 | Institutional Requirements | Protocol registration (if required) |
 | 5.3 | Institutional Requirements | Funding agency requirements met |
 | 6.1 | Data Management Plan | Data collection instruments validated |
@@ -58,22 +58,33 @@ as the single authority for IDs.
 | 6.3 | Data Management Plan | Analysis plan pre-specified |
 | 6.4 | Data Management Plan | Data sharing plan |
 
+Note: Item 5.1's enum (Approved / Submitted / Not yet submitted / Exempt) is incompatible with the items enum (PASS / NEEDS_ACTION / NOT_APPLICABLE), so 5.1 is represented in the artifact's `irb` block rather than its `items` list. The map row above is for ID-lookup only; do not write a 5.1 entry into `items`.
+
 ## Artifact format
 
 Pointer to the spec, do not duplicate. See
 `docs/specs/2026-05-02-session-resume-design.md` "Artifact format" section
-for the full frontmatter schema and body section structure.
+for the full frontmatter schema and body section structure. See also
+`templates/study_state.md` (empty template skeleton) and
+`templates/study_state.example.md` (worked example) for implementation
+anchors — these are the two concrete references an agent should use to
+verify format compliance before writing.
 
 ## Ethics derivation rules
 
-Pointer to the spec, do not duplicate. See
-`docs/specs/2026-05-02-session-resume-design.md` "Ethics trust model"
-section for the strict-precedence evaluation order
-(NOT_YET_ASSESSED → ETHICS_BLOCKED → ETHICS_PENDING → READY).
+The 4-state strict-precedence derivation (NOT_YET_ASSESSED → ETHICS_BLOCKED
+→ ETHICS_PENDING → READY) is defined in
+`docs/specs/2026-05-02-session-resume-design.md` "Ethics trust model" section.
+The agent MUST compute this every turn from the artifact body, not store it
+in frontmatter. `ethics_status` is a derived value: the source of truth is
+the per-item `status` fields in the Ethics Checklist Status YAML block plus
+the `irb` block. The strict-precedence evaluation order guarantees that
+overlapping conditions (e.g., a critical item NEEDS_ACTION AND IRB still
+SUBMITTED) resolve unambiguously — first matching rule wins.
 
 ## IRB approval reconfirmation set
 
-When `irb.status` transitions to APPROVED or EXEMPT, these item IDs MUST
+When `irb.status` transitions to APPROVED, these item IDs MUST
 be reconfirmed by re-asking the user (cannot be inherited from prior PASS):
 
 - All applicable items in **Category 1** (1.1 through 1.8)
@@ -94,25 +105,87 @@ stays PASS with a fresh `answered_at` timestamp.
 
 ## Write protocol
 
-Pointer to the spec, do not duplicate. See
-`docs/specs/2026-05-02-session-resume-design.md` "Write protocol" section
-for the 5-step sequence (Read current → revision check → compose →
-best-effort overwrite → read-back validate).
+Every write follows this 5-step sequence. The agent's prompt enforces it as
+discipline; the runtime provides Read/Write tools.
+
+1. **Read current artifact.** Capture current `revision` value.
+2. **Stale-write check.** If the on-disk `revision` does not match the
+   value the agent saw at the start of this turn, STOP. Tell the user:
+   "The artifact at `<path>` was modified between turns (revision went from
+   N to M). Another session or external editor touched it. I will not
+   overwrite. Please confirm what to do." This is the only
+   conflict-detection mechanism in PR 1.
+3. **Compose new content.** Build the full new artifact text in memory.
+   Increment `revision` by 1. Update `updated` to current ISO 8601 with
+   timezone.
+4. **Write the file (best-effort overwrite).** Single Write tool call,
+   replacing the entire file contents — no in-place edits. This is
+   *best-effort*, not atomic. Prompt-only agents have no atomicity
+   guarantee from the host runtime. A crash between read and write can
+   leave the file in any state. The next-step read-back is the only
+   correctness check.
+5. **Read back and validate.** Read the just-written file. Parse the
+   frontmatter and verify required fields are present and well-formed.
+   If validation fails, the agent MUST tell the user the write produced
+   invalid output and ask for guidance. Do not silently retry.
+
+This is not transactional. The combination (read-current → stale-write
+check → compose → overwrite → read-back validate) catches the common
+failure modes — concurrent writes, partial writes, schema drift — but not
+all of them. A truncated mid-write is the residual risk; PR 1 documents it
+rather than pretending to solve it.
 
 ## Resume protocol
 
-Pointer to the spec, do not duplicate. See
-`docs/specs/2026-05-02-session-resume-design.md` "Resume protocol" section
-for path lookup, validation, bounded resume context, and confirmation
-prompt format.
+User invokes resume with one of:
+
+- `resume <study_id>` → agent first tries `./<study_id>/state.md`; if not
+  found, asks user for the path
+- `resume <path>` → agent reads the given path directly
+
+Then:
+
+1. **Read and validate the artifact.** Run the validation rules in the
+   "Validation rules" section below. On failure, refuse to resume — explain
+   what specific rule failed, ask user for guidance.
+2. **Build resume context.** Load into working memory:
+   - Frontmatter (full)
+   - Protocol Summary (full)
+   - Ethics Checklist Status YAML (full)
+   - `track_summary` (full)
+   - Last 5 entries from TRACK Log `events` (NOT the full log)
+3. **One-line confirmation to user.** Format:
+   "Resuming study `<study_id>` (`<study_title>`), last updated `<updated>`,
+   currently in `<current_phase>` phase. Latest TRACK event: `<last event
+   ts + kind>`. Pending question: `<pending_question or "none">`. Continue?"
+4. **On user confirmation.** Pick up at the action implied by
+   `current_phase` + `pending_question`.
+
+Why bounded context (step 2): a multi-month study can accumulate hundreds
+of TRACK events. Reading the full log into context every resume wastes
+tokens and risks blowing context on long studies. The full log stays on
+disk for audit; resume only needs the recent picture.
 
 ## Validation rules
 
-Pointer to the spec, do not duplicate. See
-`docs/specs/2026-05-02-session-resume-design.md` "Validation rules" section
-for the complete list (frontmatter delimiters, parseable YAML, required
-fields, schema_version, current_phase enum, revision integer, body
-section headings, Ethics + TRACK YAML wellformedness, ISO 8601 timezone).
+An artifact is INVALID if any of these hold. The agent refuses to operate
+on invalid artifacts (refuses to resume, refuses to write).
+
+- Missing frontmatter delimiters (`---` at top + after frontmatter block)
+- Frontmatter is not parseable YAML
+- Required frontmatter field missing: `schema_version`, `study_id`,
+  `created`, `updated`, `revision`, `current_phase`
+- `schema_version` is not a known version (PR 1 knows only `1`)
+- `current_phase` is not in {PLAN, ETHICS, TRACK, COLLECT}
+- `revision` is not a positive integer
+- Required body section heading missing: Protocol Summary, Ethics
+  Checklist Status, TRACK Log
+- Ethics Checklist Status YAML block is malformed
+- TRACK Log YAML block is malformed
+- Any timestamp is missing timezone (ISO 8601 must include offset)
+
+The agent's failure message MUST tell the user which specific rule failed,
+so the user can decide whether to fix manually or recreate the study.
 
 ## Prompt-injection guard
 
@@ -133,15 +206,34 @@ hardening (PR 2 or later) may add structural escaping.
 
 ## State-changing turn rule
 
-Pointer to the spec for the full rule. See
-`docs/specs/2026-05-02-session-resume-design.md` "State-changing turn
-rule" section for the trigger criteria and 5 worked examples.
+The agent writes to the artifact only on **state-changing turns**. A turn is
+state-changing if any of these are true:
 
-Quick reference (full nuance lives in the spec):
+- The user provides a new fact that updates a frontmatter field
+  (count, date, phase, pending question)
+- The user answers a previously-pending question
+- The user reports a TRACK event (count update, timeline change, quality
+  issue, note)
+- The agent transitions phase (PLAN→ETHICS, ETHICS→TRACK, TRACK→COLLECT)
 
-- Write on: new fact, answered question, TRACK event, phase transition
-- Do not write on: clarifying questions, process explanations, restating
-  prior state at user request
+The agent does NOT write on:
+
+- Pure clarifying questions ("how is missing rate calculated?")
+- Process explanations ("what does ETHICS_PENDING mean?")
+- Restating prior state at user request
+
+When in doubt, write. The cost of an unnecessary write is one disk I/O; the
+cost of a missed state change is data loss.
+
+Worked examples:
+
+1. User says "we got 45 responses today" → write (TRACK event)
+2. User asks "what's our target again?" → no write (read-only query)
+3. User says "actually our target is 200 not 150" → write (frontmatter change)
+4. User asks "how do you compute response rate?" → no write (process Q)
+5. User says "IRB approved, here's the protocol number" → write (ethics
+   transition + category-based reconfirmation triggered, see "IRB approval
+   reconfirmation set" above)
 
 ## Out-of-scope behaviors for v1.1.0 (PR 1)
 
