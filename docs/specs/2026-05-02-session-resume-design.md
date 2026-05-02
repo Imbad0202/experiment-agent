@@ -166,7 +166,7 @@ items:
   # 4.1-4.5, 5.2, 5.3, 6.1-6.4). Item 5.1 lives in the `irb` block below.
 irb:
   required: <true | false>
-  status: NOT_SUBMITTED | SUBMITTED | APPROVED | EXEMPT
+  status: NOT_YET_SUBMITTED | SUBMITTED | APPROVED | EXEMPT
   status_changed_at: <ISO 8601 with timezone>
   approval_reference: <IRB protocol number, or null>
 ```
@@ -175,7 +175,7 @@ The item enum values use normalized YAML-friendly identifiers
 (`PASS / NEEDS_ACTION / NOT_APPLICABLE`); these are *semantically
 equivalent* to the source checklist's row labels at
 `references/irb_ethics_checklist.md` line 8. The IRB status values
-(`NOT_SUBMITTED / SUBMITTED / APPROVED / EXEMPT`) are normalized
+(`NOT_YET_SUBMITTED / SUBMITTED / APPROVED / EXEMPT`) are normalized
 identifiers semantically equivalent to the source labels at line 67
 (`Not yet submitted / Submitted / Approved / Exempt`). The mapping is
 identity-after-uppercase-and-replace-spaces-with-underscore. Reference
@@ -255,7 +255,7 @@ Evaluation order:
    institutional-process concerns. Item 5.1 / IRB approval status is
    handled at PENDING precedence below, not here.)
 3. **`ETHICS_PENDING`** — checklist row 5.1 is unsatisfied, expressed as
-   `irb.required: true` AND `irb.status` is `SUBMITTED` or `NOT_SUBMITTED`
+   `irb.required: true` AND `irb.status` is `SUBMITTED` or `NOT_YET_SUBMITTED`
    (this is exactly the source checklist's "Category 5.1 missing required
    approval/exemption → ETHICS_PENDING" rule). OR any item in categories
    5.2-6.4 has `NEEDS_ACTION`. These block participant recruitment but
