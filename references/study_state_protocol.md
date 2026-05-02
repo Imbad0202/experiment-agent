@@ -62,13 +62,150 @@ Note: Item 5.1's enum (Approved / Submitted / Not yet submitted / Exempt) is inc
 
 ## Artifact format
 
-Pointer to the spec, do not duplicate. See
-`docs/specs/2026-05-02-session-resume-design.md` "Artifact format" section
-for the full frontmatter schema and body section structure. See also
-`templates/study_state.md` (empty template skeleton) and
-`templates/study_state.example.md` (worked example) for implementation
-anchors — these are the two concrete references an agent should use to
-verify format compliance before writing.
+Markdown with YAML frontmatter. Same lineage as Material Passport and existing
+`templates/study_protocol.md`.
+
+### Frontmatter
+
+```yaml
+---
+schema_version: 1
+study_id: <user-provided slug, e.g. "heeact-2026-q2-survey">
+study_title: <human-readable title>
+state_path_relative: <path to this file relative to the repo or workspace
+  root if discoverable, else relative to cwd at write time. Canonical.>
+state_path_absolute_at_write: <absolute path to this file at last write.
+  Diagnostic only — not used for resume lookup. Helpful when the relative
+  path resolves wrong because cwd changed.>
+created: <ISO 8601 with timezone, e.g. 2026-05-02T11:30:00+08:00>
+updated: <ISO 8601 with timezone>
+revision: <int, starts at 1, increments on every write>
+current_phase: PLAN | ETHICS | TRACK | COLLECT
+pending_question: <the last unanswered question the agent posed, or null>
+recruitment:
+  target: <int or null>
+  current: <int or null>
+  completed: <int or null>
+  partial: <int or null>
+  excluded: <int or null>
+timeline:
+  collection_start: <ISO date or null>
+  collection_end_target: <ISO date or null>
+  collection_end_actual: <ISO date or null, only set on COLLECT>
+track_summary:
+  last_event_ts: <ISO 8601 with timezone of most recent TRACK event, or null>
+  current_counts: <one-line restatement of recruitment block, e.g.
+    "45/100 completed, 7 partial, 0 excluded">
+  open_flags: <list of currently-active agent flags, e.g.
+    ["response_rate_below_50pct_at_midpoint", "missing_q7_above_15pct"],
+    or empty list>
+  recent_changes: <one-line summary of what changed in the last ~3 TRACK
+    events, e.g. "added 12 responses since 2026-04-28; missing rate climbed
+    from 8% to 17% on q7">
+  next_action: <what the agent expects to happen next, e.g.
+    "user to confirm extension of collection deadline">
+  narrative: |
+    <2-3 sentence prose summary for human readability. Optional but
+    encouraged. Used as fallback context if the structured fields above
+    are insufficient.>
+---
+```
+
+Note: `ethics_status` is **not** a frontmatter field. It is a derived value
+computed from the body's Ethics Checklist Status section. See "Ethics derivation
+rules" below.
+
+Note: `ARCHIVED` is **not** a `current_phase` value. Archive semantics are out
+of scope for PR 1; the agent never writes that value.
+
+### Body sections (fixed order, all required)
+
+```markdown
+## Protocol Summary
+<Cumulative protocol notes from PLAN phase: RQ, design, variables,
+population, instruments, timeline, analysis plan. Free-form Markdown.>
+
+## Ethics Checklist Status
+<Each checklist item from references/irb_ethics_checklist.md.
+Format: structured YAML block, not Markdown table.
+
+Item IDs are the checklist's category.item numbers (1.1, 2.2, 5.1, etc.).
+This is the canonical ID map — see the "Canonical checklist ID map" section
+above for the full table mapping every checklist row to its stable ID.>
+
+```yaml
+items:
+  - id: "1.1"  # consent pathway documented
+    status: PASS | NEEDS_ACTION | NOT_APPLICABLE
+    answered_at: <ISO 8601 with timezone>
+    note: <short user answer>
+  - id: "2.2"  # secure storage location defined
+    status: PASS | NEEDS_ACTION | NOT_APPLICABLE
+    answered_at: <ISO 8601 with timezone>
+    note: <short>
+  # ... all checklist items EXCEPT 5.1 (1.1-1.8, 2.1-2.6, 3.1-3.6,
+  # 4.1-4.5, 5.2, 5.3, 6.1-6.4). Item 5.1 lives in the `irb` block below.
+irb:
+  required: <true | false>
+  status: NOT_YET_SUBMITTED | SUBMITTED | APPROVED | EXEMPT
+  status_changed_at: <ISO 8601 with timezone>
+  approval_reference: <IRB protocol number, or null>
+```
+
+The item enum values use normalized YAML-friendly identifiers
+(`PASS / NEEDS_ACTION / NOT_APPLICABLE`); these are *semantically
+equivalent* to the source checklist's row labels at
+`references/irb_ethics_checklist.md` line 8. The IRB status values
+(`NOT_YET_SUBMITTED / SUBMITTED / APPROVED / EXEMPT`) are normalized
+identifiers semantically equivalent to the source labels at line 67
+(`Not yet submitted / Submitted / Approved / Exempt`). The mapping is
+identity-after-uppercase-and-replace-spaces-with-underscore. Reference
+implementations that need to display the human-readable label can
+reverse this mapping. Storing identifiers (not labels) in YAML keeps
+the artifact parseable without a custom string normalizer.
+
+**Item 5.1 special case.** The checklist's row 5.1 is "IRB/ethics
+committee approval status," whose legitimate values are exactly the
+checklist's IRB enum (Approved / Submitted / Not yet submitted /
+Exempt) — not PASS / NEEDS_ACTION / NOT_APPLICABLE. Representing 5.1
+twice (once in `items` and once in `irb`) would create ambiguity about
+which is authoritative. The artifact resolves this by putting 5.1
+*only* in the `irb` block. The `items` list contains every other
+checklist row but explicitly omits 5.1. This is the only structural
+divergence from the source checklist's flat row list, and it is forced
+by the checklist's own different enum for that row.
+
+The `irb.required` field is a boolean flag, not part of the IRB status
+enum. The source checklist phrases this as "when required" inline in the
+derivation rules at line 14; the artifact represents it as an explicit
+boolean so the derivation is computable from the YAML alone. When
+`irb.required: false`, IRB status is not consulted by the derivation
+rules (the checklist's "when required" condition is satisfied vacuously).
+
+## TRACK Log
+<Chronological list of user-reported events. YAML block, not Markdown table.
+Append-only — old entries never edited or deleted.>
+
+```yaml
+events:
+  - ts: <ISO 8601 with timezone>
+    kind: count_update | timeline_change | quality_issue | agent_flag | user_note
+    payload: <free-form text or structured detail>
+```
+
+## COLLECT Readiness
+<Only filled when current_phase=COLLECT. Four checks: sample_size, missing_data,
+format, timeline. Each PASS | FAIL | WARN with one-line justification.>
+```
+
+Why YAML for the mutable lists (Ethics + TRACK) but Markdown for Protocol
+Summary: codex's review correctly flagged that LLMs drift on free-form Markdown
+table format across many turns. Structured YAML survives reparsing. Protocol
+Summary is narrative human prose — Markdown is fine because it's not parsed
+back into structured fields.
+
+See also `templates/study_state.md` (skeleton) and
+`templates/study_state.example.md` (worked example).
 
 ## Ethics derivation rules
 
