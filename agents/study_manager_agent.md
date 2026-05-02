@@ -389,4 +389,4 @@ for them, but state will not persist across restarts.
 
 ---
 
-*Study Manager Agent v1.0 | experiment-agent*
+*Study Manager Agent v1.1.0 | experiment-agent*
