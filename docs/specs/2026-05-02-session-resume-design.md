@@ -162,7 +162,8 @@ items:
     status: PASS | NEEDS_ACTION | NOT_APPLICABLE
     answered_at: <ISO 8601 with timezone>
     note: <short>
-  # ... all checklist items 1.1 through 6.4 ...
+  # ... all checklist items EXCEPT 5.1 (1.1-1.8, 2.1-2.6, 3.1-3.6,
+  # 4.1-4.5, 5.2, 5.3, 6.1-6.4). Item 5.1 lives in the `irb` block below.
 irb:
   required: <true | false>
   status: NOT_SUBMITTED | SUBMITTED | APPROVED | EXEMPT
@@ -170,16 +171,35 @@ irb:
   approval_reference: <IRB protocol number, or null>
 ```
 
-The item enum values (`PASS / NEEDS_ACTION / NOT_APPLICABLE`) and the IRB
-status values (`NOT_SUBMITTED / SUBMITTED / APPROVED / EXEMPT`) match the
-source checklist (`references/irb_ethics_checklist.md` line 67) exactly.
+The item enum values use normalized YAML-friendly identifiers
+(`PASS / NEEDS_ACTION / NOT_APPLICABLE`); these are *semantically
+equivalent* to the source checklist's row labels at
+`references/irb_ethics_checklist.md` line 8. The IRB status values
+(`NOT_SUBMITTED / SUBMITTED / APPROVED / EXEMPT`) are normalized
+identifiers semantically equivalent to the source labels at line 67
+(`Not yet submitted / Submitted / Approved / Exempt`). The mapping is
+identity-after-uppercase-and-replace-spaces-with-underscore. Reference
+implementations that need to display the human-readable label can
+reverse this mapping. Storing identifiers (not labels) in YAML keeps
+the artifact parseable without a custom string normalizer.
+
+**Item 5.1 special case.** The checklist's row 5.1 is "IRB/ethics
+committee approval status," whose legitimate values are exactly the
+checklist's IRB enum (Approved / Submitted / Not yet submitted /
+Exempt) — not PASS / NEEDS_ACTION / NOT_APPLICABLE. Representing 5.1
+twice (once in `items` and once in `irb`) would create ambiguity about
+which is authoritative. The artifact resolves this by putting 5.1
+*only* in the `irb` block. The `items` list contains every other
+checklist row but explicitly omits 5.1. This is the only structural
+divergence from the source checklist's flat row list, and it is forced
+by the checklist's own different enum for that row.
 
 The `irb.required` field is a boolean flag, not part of the IRB status
 enum. The source checklist phrases this as "when required" inline in the
-derivation rules; the artifact represents it as an explicit boolean so
-the derivation is computable from the YAML alone. When `irb.required:
-false`, IRB status is not consulted by the derivation rules (the
-checklist's "when required" condition is satisfied vacuously).
+derivation rules at line 14; the artifact represents it as an explicit
+boolean so the derivation is computable from the YAML alone. When
+`irb.required: false`, IRB status is not consulted by the derivation
+rules (the checklist's "when required" condition is satisfied vacuously).
 
 ## TRACK Log
 <Chronological list of user-reported events. YAML block, not Markdown table.
@@ -225,16 +245,21 @@ precedence, derived status would be ambiguous.
 Evaluation order:
 
 1. **`NOT_YET_ASSESSED`** — the Ethics Checklist Status section has no
-   `items` populated yet, or fewer than the full checklist roster.
+   `items` populated yet, or fewer than the full checklist roster
+   (every checklist row except 5.1, which lives in the `irb` block).
    (Highest precedence: nothing else can be derived from incomplete data.)
 2. **`ETHICS_BLOCKED`** — any item in categories 1, 2, or 3 has
    `status: NEEDS_ACTION` (these are the CRITICAL categories per the
    checklist), OR any applicable item in category 4 has `NEEDS_ACTION`.
    (Second precedence: critical participant-protection issues override
-   institutional-process concerns.)
-3. **`ETHICS_PENDING`** — `irb.required: true` AND `irb.status` is
-   `SUBMITTED` or `NOT_SUBMITTED`, OR any item in categories 5.2-6.4 has
-   `NEEDS_ACTION`. These block participant recruitment but do not
+   institutional-process concerns. Item 5.1 / IRB approval status is
+   handled at PENDING precedence below, not here.)
+3. **`ETHICS_PENDING`** — checklist row 5.1 is unsatisfied, expressed as
+   `irb.required: true` AND `irb.status` is `SUBMITTED` or `NOT_SUBMITTED`
+   (this is exactly the source checklist's "Category 5.1 missing required
+   approval/exemption → ETHICS_PENDING" rule). OR any item in categories
+   5.2-6.4 has `NEEDS_ACTION`. These block participant recruitment but
+   do not
    constitute participant-protection violations.
 4. **`READY`** — all of the above are false. Equivalently: every item is
    `PASS` or `NOT_APPLICABLE`, AND (if `irb.required: true`) `irb.status`
