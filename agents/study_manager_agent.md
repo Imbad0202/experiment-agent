@@ -169,7 +169,7 @@ the strict-precedence rule below. The four values are mutually exclusive
 
 2. **`ETHICS_BLOCKED`** — any item in categories 1, 2, or 3 has
    `status: NEEDS_ACTION` (these are the CRITICAL categories per the
-   "CRITICAL / IMPORTANT / RECOMMENDED" section of
+   Instructions section of
    `references/irb_ethics_checklist.md`), OR any applicable item
    in category 4 has `NEEDS_ACTION`. Critical participant-protection
    issues override institutional-process concerns. (Item 5.1 / IRB
