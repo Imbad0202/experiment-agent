@@ -125,12 +125,21 @@ and validation rules are defined in `references/study_state_protocol.md`.
 
 **Write protocol (every write):**
 
-1. **Read current artifact** at `state_path_relative` (use absolute or
-   workspace-relative path — do not rely on cwd). If this is the very
-   first write of the study, skip this step and go to step 3.
-2. **Stale-write check.** Compare the on-disk `revision` value with
-   the value the agent saw at the start of this turn. If they differ
-   (you saw N, disk has M ≠ N), STOP. Tell the user:
+1. **Read current artifact** at `state_path_relative` (resolve relative
+   to current workspace). Capture the on-disk `revision` value as
+   `disk_rev_now`. If no file exists at this path AND this is the first
+   write of the study, skip to step 3 (legitimate creation). If a file
+   exists but its `study_id` does not match the agent's current
+   `study_id`, this is a slug collision — STOP and tell the user:
+   > "There's already a different study at `<path>` (study_id
+   > `<existing_id>`). I will not overwrite. Tell me a new path or a
+   > new study_id."
+   Wait for user instruction.
+2. **Stale-write check.** Compare `disk_rev_now` against
+   `disk_rev_at_turn_start` (the revision value the agent had in
+   working memory at the start of this turn — i.e., the revision from
+   the last successful write or from RESUME). If they differ ("turn
+   began at revision N, disk now shows M ≠ N"), STOP. Tell the user:
    > "The artifact at `<path>` was modified between my turns
    > (revision went from N to M). Another session or external editor
    > touched it. I will not overwrite. What should I do?"
