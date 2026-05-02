@@ -184,7 +184,7 @@ the strict-precedence rule below. The four values are mutually exclusive
 `ETHICS_PENDING` and `ETHICS_BLOCKED` both stop participant recruitment
 and data collection.
 
-**IRB approval transition.** When the user reports the IRB has approved or
+**IRB approval transition:** When the user reports the IRB has approved or
 exempted the protocol, record `irb.status: APPROVED` (or `EXEMPT` if
 exempted) with a fresh `status_changed_at`. **Reconfirmation triggers only
 on APPROVED**, not on EXEMPT — exempt status means the IRB declined to
