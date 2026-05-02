@@ -2,6 +2,17 @@
 
 ## Unreleased — v1.1.0 (target)
 
+**Status (2026-05-02)**: PR 1 implementation complete on branch
+`feat/v1.2.3-session-resume-spec`. All 10 tasks landed (ID map +
+templates + agent prompt + SKILL.md). Ready for PR open and dogfood.
+PR 2 (hardening: external-edit detection, multi-study, slug-collision
+recovery, explicit ethics-upgrade command, schema migration) deferred
+until ≥2 weeks of v1.1.0 dogfood evidence.
+
+Spec: [docs/specs/2026-05-02-session-resume-design.md](docs/specs/2026-05-02-session-resume-design.md)
+(codex round 6 cleared). Plan:
+[docs/plans/2026-05-02-session-resume-implementation.md](docs/plans/2026-05-02-session-resume-implementation.md).
+
 ### New: Session resume for human studies
 
 - `study_manager_agent` now persists study state to disk on every
