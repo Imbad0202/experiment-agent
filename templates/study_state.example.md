@@ -8,7 +8,7 @@ created: 2026-04-01T09:00:00+08:00
 updated: 2026-04-28T16:42:00+08:00
 revision: 23
 current_phase: TRACK
-pending_question: null
+pending_question: "Revise q12 wording or proceed with imputation strategy for missing data?"
 recruitment:
   target: 100
   current: 45
@@ -67,32 +67,32 @@ analyzed via thematic analysis (two-coder, Cohen's kappa target ≥ 0.7).
 items:
   - id: "1.1"
     status: PASS
-    answered_at: 2026-04-05T10:30:00+08:00
-    note: "IRB-approved click-through consent for online study"
+    answered_at: 2026-04-12T14:30:00+08:00
+    note: "IRB-approved click-through consent for online study (reconfirmed 2026-04-12 post-approval, no IRB-mandated changes)"
   - id: "1.2"
     status: PASS
-    answered_at: 2026-04-05T10:32:00+08:00
-    note: "English + traditional Chinese versions, plain-language reviewed"
+    answered_at: 2026-04-12T14:35:00+08:00
+    note: "English + traditional Chinese versions, plain-language reviewed (reconfirmed 2026-04-12 post-approval, no IRB-mandated changes)"
   - id: "1.3"
     status: PASS
-    answered_at: 2026-04-05T10:33:00+08:00
-    note: "Purpose, ~12-min duration, anonymous data handling all stated"
+    answered_at: 2026-04-12T14:40:00+08:00
+    note: "Purpose, ~12-min duration, anonymous data handling all stated (reconfirmed 2026-04-12 post-approval, no IRB-mandated changes)"
   - id: "1.4"
     status: PASS
-    answered_at: 2026-04-05T10:34:00+08:00
-    note: "Minimal risk; benefits framed as institutional learning"
+    answered_at: 2026-04-12T14:45:00+08:00
+    note: "Minimal risk; benefits framed as institutional learning (reconfirmed 2026-04-12 post-approval, no IRB-mandated changes)"
   - id: "1.5"
     status: PASS
-    answered_at: 2026-04-05T10:35:00+08:00
-    note: "Withdrawal language explicit, no penalty"
+    answered_at: 2026-04-12T14:50:00+08:00
+    note: "Withdrawal language explicit, no penalty (reconfirmed 2026-04-12 post-approval, no IRB-mandated changes)"
   - id: "1.6"
     status: PASS
-    answered_at: 2026-04-05T10:36:00+08:00
-    note: "Storage in institutional encrypted server; access listed"
+    answered_at: 2026-04-12T14:55:00+08:00
+    note: "Storage in institutional encrypted server; access listed (reconfirmed 2026-04-12 post-approval, no IRB-mandated changes)"
   - id: "1.7"
     status: PASS
-    answered_at: 2026-04-05T10:37:00+08:00
-    note: "Click-through, IRB approved as appropriate for online survey"
+    answered_at: 2026-04-12T15:00:00+08:00
+    note: "Click-through, IRB approved as appropriate for online survey (reconfirmed 2026-04-12 post-approval, no IRB-mandated changes)"
   - id: "1.8"
     status: NOT_APPLICABLE
     answered_at: 2026-04-05T10:38:00+08:00
@@ -103,20 +103,20 @@ items:
     note: "Pseudonymized via study ID; demographic linking limited to dept code only"
   - id: "2.2"
     status: PASS
-    answered_at: 2026-04-05T10:41:00+08:00
-    note: "Institutional encrypted server, IRB-approved location"
+    answered_at: 2026-04-12T15:10:00+08:00
+    note: "Institutional encrypted server, IRB-approved location (reconfirmed 2026-04-12 post-approval, no IRB-mandated changes)"
   - id: "2.3"
     status: PASS
-    answered_at: 2026-04-05T10:42:00+08:00
-    note: "Retain 5 years post-publication; destroy by 2032"
+    answered_at: 2026-04-12T15:15:00+08:00
+    note: "Retain 5 years post-publication; destroy by 2032 (reconfirmed 2026-04-12 post-approval, no IRB-mandated changes)"
   - id: "2.4"
     status: PASS
-    answered_at: 2026-04-05T10:43:00+08:00
-    note: "PI + 2 named research assistants only"
+    answered_at: 2026-04-12T15:20:00+08:00
+    note: "PI + 2 named research assistants only (reconfirmed 2026-04-12 post-approval, no IRB-mandated changes)"
   - id: "2.5"
     status: PASS
-    answered_at: 2026-04-05T10:44:00+08:00
-    note: "TLS for survey transmission; no email transfer of raw data"
+    answered_at: 2026-04-12T15:25:00+08:00
+    note: "TLS for survey transmission; no email transfer of raw data (reconfirmed 2026-04-12 post-approval, no IRB-mandated changes)"
   - id: "2.6"
     status: PASS
     answered_at: 2026-04-05T10:45:00+08:00
@@ -135,16 +135,16 @@ items:
     note: "Anonymous survey; no professional consequences possible"
   - id: "3.4"
     status: PASS
-    answered_at: 2026-04-05T10:53:00+08:00
-    note: "Minimal-risk study; standard mitigation language in consent"
+    answered_at: 2026-04-12T15:35:00+08:00
+    note: "Minimal-risk study; standard mitigation language in consent (reconfirmed 2026-04-12 post-approval, no IRB-mandated changes)"
   - id: "3.5"
     status: NOT_APPLICABLE
     answered_at: 2026-04-05T10:54:00+08:00
     note: "No deception used"
   - id: "3.6"
     status: PASS
-    answered_at: 2026-04-05T10:55:00+08:00
-    note: "Counseling resources listed in debrief page"
+    answered_at: 2026-04-12T15:40:00+08:00
+    note: "Counseling resources listed in debrief page (reconfirmed 2026-04-12 post-approval, no IRB-mandated changes)"
   - id: "4.1"
     status: NOT_APPLICABLE
     answered_at: 2026-04-05T11:00:00+08:00
@@ -159,8 +159,8 @@ items:
     note: "No patients"
   - id: "4.4"
     status: PASS
-    answered_at: 2026-04-05T11:03:00+08:00
-    note: "Faculty respondents; PI has no supervisory role over participants"
+    answered_at: 2026-04-13T10:00:00+08:00
+    note: "Faculty respondents; PI has no supervisory role over participants (reconfirmed 2026-04-13 post-approval, no IRB-mandated changes)"
   - id: "4.5"
     status: NOT_APPLICABLE
     answered_at: 2026-04-05T11:04:00+08:00
