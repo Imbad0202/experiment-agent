@@ -1,6 +1,7 @@
 """Tests for scripts/check_study_state.py. Run: python3 -m unittest discover tests"""
 
 import contextlib
+import datetime
 import importlib.util
 import io
 import os
@@ -19,6 +20,8 @@ PROTOCOL = REPO / "references" / "study_state_protocol.md"
 EXAMPLE = (REPO / "templates" / "study_state.example.md").read_text(encoding="utf-8")
 TEMPLATE = (REPO / "templates" / "study_state.md").read_text(encoding="utf-8")
 EXAMPLE_PATH = "studies/pacific-rim-sustainability-2026/state.md"
+# The example's Ethics Checklist Status yaml block, with its fences.
+ETHICS_BLOCK = EXAMPLE[EXAMPLE.index("```yaml\nitems:"):EXAMPLE.index("```\n\n## TRACK Log") + len("```\n")]
 
 
 def load_checker():
@@ -119,7 +122,8 @@ class AgentTextTest(unittest.TestCase):
         # The artifact path can come from the artifact itself; inside double quotes the shell still runs $(...).
         agent = (REPO / "agents" / "study_manager_agent.md").read_text(encoding="utf-8")
         commands = [line for line in agent.split("\n") if line.startswith("python3 ")]
-        self.assertEqual(commands, ["python3 '<skill directory>/scripts/check_study_state.py' '<artifact path>'"])
+        self.assertEqual(commands, ["python3 '<skill directory>/scripts/check_study_state.py' '<artifact path>'",
+                                    "python3 '<skill directory>/scripts/check_study_state.py' --now"])
 
 
 class LoaderTest(unittest.TestCase):
@@ -178,6 +182,15 @@ class StructureTest(unittest.TestCase):
         self.assertEqual(rules(check(EXAMPLE[len("---\n"):])), [(checker.V1, "frontmatter")])
         self.assertEqual(rules(check("---\nschema_version: 1\n\n## Protocol Summary\n")),
                          [(checker.V1, "frontmatter")])
+        # A delimiter is exactly "---". Readers differ on "---" with whitespace after it, so such a line is
+        # malformed wherever it stands.
+        for space in (" ", "\t", chr(0xA0), chr(0x3000)):
+            with self.subTest(hex(ord(space))):
+                opening = "---" + space + EXAMPLE[len("---"):]
+                inside = "---\n---" + space + EXAMPLE[len("---"):]
+                closing = edit(EXAMPLE, "---\n\n## Protocol Summary", "---" + space + "\n\n## Protocol Summary")
+                for text in (opening, inside, closing):
+                    self.assertEqual(rules(check(text)), [(checker.V1, "frontmatter")])
 
     def test_frontmatter_must_parse_as_a_mapping(self):
         result = check(edit(EXAMPLE, "revision: 23", "revision: [23"))
@@ -250,13 +263,13 @@ class StructureTest(unittest.TestCase):
                 self.assertIn("HTML", result.problems[0].detail)
 
     def test_yaml_block_hidden_behind_a_visible_decoy_is_not_read(self):
-        real = EXAMPLE[EXAMPLE.index("```yaml\nitems:"):EXAMPLE.index("```\n\n## TRACK Log") + len("```\n")]
-        decoy = set_status(edit(real, "```yaml", "```"), "1.1", "NEEDS_ACTION")
-        self.assertFalse(check(edit(EXAMPLE, real, decoy + "\n<!--\n" + real + "-->\n")).valid)
+        decoy = set_status(edit(ETHICS_BLOCK, "```yaml", "```"), "1.1", "NEEDS_ACTION")
+        self.assertFalse(check(edit(EXAMPLE, ETHICS_BLOCK, decoy + "\n<!--\n" + ETHICS_BLOCK + "-->\n")).valid)
 
-    def test_other_ways_to_write_a_checked_heading_are_malformed(self):
-        # A reader sees each of these as a heading for the section; the checker reads only "## <name>".
-        variants = {
+    def test_headings_other_than_the_four_sections_are_malformed(self):
+        # The only headings are the four "## <name>" section headings, so no other heading can pass for a
+        # section, however it is written.
+        in_ethics = {
             "indented": " ## Ethics Checklist Status",
             "tab": "##\tEthics Checklist Status",
             "closing hashes": "## Ethics Checklist Status ##",
@@ -264,16 +277,80 @@ class StructureTest(unittest.TestCase):
             "other level": "### Ethics Checklist Status",
             "invisible character": "## Ethics Checklist Status" + chr(0x200B),
             "combining mark inside a word": "## Eth" + chr(0xFE0F) + "ics Checklist Status",
+            "look-alike letter": "## " + chr(0x415) + "thics Checklist Status",
+            "reference link": "## [Ethics][e] Checklist Status\n\n[e]: https://example.org",
+            "link with parentheses": "## [Ethics](a(b)c) Checklist Status",
             "in a quote": "> ## Ethics Checklist Status",
             "underlined": "Ethics Checklist Status\n---",
             "underlined with one dash": "Ethics Checklist Status\n-",
+            "underlined after an indented line": "  Ethics Checklist Status\n---",
+            "underlined over two lines": "Ethics\n  Checklist Status\n---",
+            "underlined after a numbered line": "Ethics Checklist Status\n2) x\n---",
+            "sub-heading": "### Notes",
         }
-        for name, heading in variants.items():
+        for name, heading in in_ethics.items():
             with self.subTest(name):
                 result = check(edit(EXAMPLE, "## TRACK Log\n", heading + "\n\n## TRACK Log\n"))
                 self.assertEqual(rules(result), [(checker.V8, "## Ethics Checklist Status")])
+                self.assertIn("heading other than the four section headings", result.problems[0].detail)
         track = check(edit(EXAMPLE, "## COLLECT Readiness\n", "## TRACK Log ##\n\n## COLLECT Readiness\n"))
         self.assertEqual(rules(track), [(checker.V9, "## TRACK Log")])
+        elsewhere = {
+            "title before the first section": ("## Protocol Summary\n", "# Study state\n\n## Protocol Summary\n"),
+            "sub-heading": ("**Design.**", "### Design\n\n**Design.**"),
+            "heading in a list item": ("**Design.**", "- Design\n\n    ## Ethics Checklist Status\n\n**Design.**"),
+            "underlined after an indented line": ("**Design.**", "  Ethics Checklist Status\n---\n\n**Design.**"),
+            "underlined over two lines": ("**Design.**", "Ethics\n    Checklist Status\n---\n\n**Design.**"),
+        }
+        for name, (old, new) in elsewhere.items():
+            with self.subTest(name):
+                result = check(edit(EXAMPLE, old, new))
+                self.assertEqual(rules(result), [(checker.V7, "body")])
+                self.assertIn("heading other than the four section headings", result.problems[0].detail)
+
+    def test_lines_that_only_look_like_headings_are_text(self):
+        # A reader sees no heading in these, so the checker must not report one.
+        lines = {
+            "hashtag": "#pilot",
+            "escaped": "\\# not a heading",
+            "rule after a list": "- item\n---",
+            "rule after a quote": "> quoted\n---",
+            "rule after a list item's second line": "- item\n  continued\n---",
+            "rule after a quote's unmarked second line": "> quoted\ncontinued\n---",
+            "rule after indented code": "    code\n---",
+            "spaced rule after text": "Some text\n- - -",
+        }
+        for name, line in lines.items():
+            with self.subTest(name):
+                self.assertEqual(check(edit(EXAMPLE, "**Design.**", line + "\n\n**Design.**")).problems, [])
+
+    def test_code_blocks_open_only_at_the_first_column(self):
+        # A reader ends a code block in a list item or quote where the item or quote ends, while the checker
+        # would read on as code; such a block could hide text from the checker.
+        cases = {
+            "indented": "  ```\n  SUS-10; NASA-TLX\n  ```",
+            "indented with a tab": "\t```\n\tSUS-10; NASA-TLX\n\t```",
+            "in a list item": "- Instruments:\n  ```\n  SUS-10; NASA-TLX\n  ```",
+            "in a quote": "> ```\n> SUS-10; NASA-TLX\n> ```",
+        }
+        for name, block in cases.items():
+            with self.subTest(name):
+                result = check(edit(EXAMPLE, "**Design.**", block + "\n\n**Design.**"))
+                self.assertEqual(rules(result), [(checker.V7, "body")])
+                self.assertIn("first column", result.problems[0].detail)
+        in_ethics = check(edit(EXAMPLE, "```yaml\nitems:", " ```yaml\nitems:"))
+        self.assertEqual(rules(in_ethics), [(checker.V8, "## Ethics Checklist Status")])
+        at_first_column = edit(EXAMPLE, "**Design.**", "```\nSUS-10; NASA-TLX\n```\n\n**Design.**")
+        self.assertEqual(check(at_first_column).problems, [])
+
+    def test_decoy_after_a_code_block_in_a_list_item_is_not_read(self):
+        # A reader ends the list item's code block at the unindented decoy heading, shows the decoy, and
+        # hides the real block in an HTML comment; the checker would read the real block as READY.
+        decoy = set_status(ETHICS_BLOCK.replace("```", "~~~"), "1.1", "NEEDS_ACTION")
+        list_item = "- Instruments:\n  ```\n  SUS-10; NASA-TLX\nEthics Checklist Status\n---\n\n"
+        text = edit(EXAMPLE, "## Ethics Checklist Status\n",
+                    list_item + decoy + "\n<!--\n```\n\n## Ethics Checklist Status\n")
+        self.assertFalse(check(edit(text, "```\n\n## TRACK Log", "```\n-->\n\n## TRACK Log")).valid)
 
     def test_checked_sections_hold_only_text_and_their_yaml_block(self):
         extra_fence = check(edit(EXAMPLE, "```yaml\nitems:", "```\nitems: []\n```\n\n```yaml\nitems:"))
@@ -293,18 +370,11 @@ class StructureTest(unittest.TestCase):
                 self.assertFalse(result.valid)
                 self.assertIn((checker.V7, "## TRACK Log"), rules(result))
 
-    def test_long_character_reference_in_a_heading_is_text(self):
-        # Markdown reads at most 7 digits as a character reference; Python 3.11+ refuses to convert 4,300.
-        heading = "### Notes &#" + "9" * 5000 + ";\n\n"
-        self.assertEqual(check(edit(EXAMPLE, "## TRACK Log\n", heading + "## TRACK Log\n")).problems, [])
-
     def test_long_lines_are_read_in_linear_time(self):
-        # A pattern that rescans the rest of the line takes seconds on lines like these.
-        for line in ("## " + "](" * 100000, ">" * 800000, "### x &#" + "7" * 200000 + ";"):
-            with self.subTest(line[:8]):
-                started = time.monotonic()
-                check(edit(EXAMPLE, "**Design.**", line + "\n\n**Design.**"))
-                self.assertLess(time.monotonic() - started, 2)
+        # Removing quote markers by copying the rest of the line each time takes seconds on this line.
+        started = time.monotonic()
+        check(edit(EXAMPLE, "**Design.**", ">" * 800000 + "\n\n**Design.**"))
+        self.assertLess(time.monotonic() - started, 2)
 
     def test_repeated_yaml_aliases_are_checked_once(self):
         aliases = ['a0: &a0 ["x", "x", "x", "x", "x", "x", "x", "x", "x", "x"]']
@@ -473,6 +543,37 @@ class BlockTest(unittest.TestCase):
                 self.assertEqual(rules(result), [(rule, location)])
                 self.assertIn("found the tag", result.problems[0].detail)
 
+    def test_numbers_too_long_to_read_are_malformed(self):
+        # Python refuses to read or print an integer of more than 4300 digits, which made the checker exit 2.
+        note = 'note: "Survey only, no physical procedures"'
+        cases = {
+            "frontmatter": ("current_phase: TRACK", "current_phase: TRACK\nextra: " + "7" * 5000,
+                            checker.V2, "frontmatter"),
+            "base-60 revision": ("revision: 23", "revision: 1" + ":59" * 3000, checker.V2, "frontmatter"),
+            "item": (note, "note: " + "7" * 5000, checker.V8, "## Ethics Checklist Status"),
+        }
+        for name, (old, new, rule, location) in cases.items():
+            with self.subTest(name):
+                result = check(edit(EXAMPLE, old, new))
+                self.assertEqual(rules(result), [(rule, location)])
+                self.assertIn("found a number longer than", result.problems[0].detail)
+
+    def test_deep_nesting_is_malformed(self):
+        # Nesting of a few hundred levels ran out of Python's stack, which made the checker exit 2.
+        deep = "[" * 500 + "]" * 500
+        note = 'note: "Survey only, no physical procedures"'
+        cases = {
+            "frontmatter": ("current_phase: TRACK", "current_phase: TRACK\nextra: " + deep,
+                            checker.V2, "frontmatter"),
+            "item": (note, "note: " + deep, checker.V8, "## Ethics Checklist Status"),
+            "TRACK Log": ("```yaml\nevents:\n", f"```yaml\nshape: {deep}\nevents:\n", checker.V9, "## TRACK Log"),
+        }
+        for name, (old, new, rule, location) in cases.items():
+            with self.subTest(name):
+                result = check(edit(EXAMPLE, old, new))
+                self.assertEqual(rules(result), [(rule, location)])
+                self.assertIn("nested more than", result.problems[0].detail)
+
     def test_complex_keys_fail_in_the_loader(self):
         complex_key = check(edit(EXAMPLE, "```yaml\nevents:\n", "```yaml\n? [a, b]\n: x\nevents:\n"))
         self.assertEqual(rules(complex_key), [(checker.V9, "## TRACK Log")])
@@ -540,10 +641,11 @@ class DerivationTest(unittest.TestCase):
             "not reconfirmed since IRB approval at 2026-04-20T09:00:00+08:00: "
             "1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 2.2, 2.3, 2.4, 2.5, 3.4, 3.6, 4.4"]))
 
-    def test_reconfirmation_compares_instants(self):
-        self.assertEqual(status(approved_at("2026-04-12T06:30:00Z")), ("READY", ["none"]))
-        self.assertEqual(status(approved_at("2026-04-12T06:30:01Z")), ("ETHICS_PENDING", [
-            "not reconfirmed since IRB approval at 2026-04-12T06:30:01Z: 1.1"]))
+    def test_reconfirmation_must_come_after_the_approval(self):
+        # An answer recorded at the same instant as the approval may have been given before it.
+        self.assertEqual(status(approved_at("2026-04-12T06:29:59Z")), ("READY", ["none"]))
+        self.assertEqual(status(approved_at("2026-04-12T06:30:00Z")), ("ETHICS_PENDING", [
+            "not reconfirmed since IRB approval at 2026-04-12T06:30:00Z: 1.1"]))
 
     def test_reconfirmation_compares_digits_past_microseconds(self):
         text = edit(approved_at("2026-04-12T06:30:00.0000002Z"),
@@ -718,6 +820,20 @@ class CliTest(unittest.TestCase):
         self.assertEqual(done.returncode, 2)
         self.assertIn("PyYAML is not installed for", done.stderr)
         self.assertIn("(python3 -m pip install pyyaml)", done.stderr)
+
+    def test_now_prints_the_current_time(self):
+        # The agent records every current time from here, so answers and the approval compare in order.
+        with tempfile.TemporaryDirectory() as tmp:
+            write_file(tmp, "raise ImportError('simulated missing PyYAML')\n", "yaml.py")
+            runs = {"with PyYAML": run_checker("--now"),
+                    "without PyYAML": run_checker("--now", extra_env={"PYTHONPATH": tmp})}
+        for name, done in runs.items():
+            with self.subTest(name):
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertEqual(done.stdout.count("\n"), 1)
+                moment, _ = checker.parse_timestamp(done.stdout.strip())
+                self.assertLess(abs(datetime.datetime.now(datetime.timezone.utc) - moment),
+                                datetime.timedelta(minutes=1))
 
     def test_unusable_id_map_exits_2(self):
         with tempfile.TemporaryDirectory() as tmp:

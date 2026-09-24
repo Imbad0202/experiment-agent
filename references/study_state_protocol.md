@@ -223,6 +223,10 @@ See also `templates/study_state.md` (skeleton) and
 `templates/study_state.example.md` (worked example).
 <!-- /INLINE-FROM-SPEC: Artifact format -->
 
+The checker accepts only the layout the agent writes, so Protocol Summary,
+like every section, has no headings of its own and starts code blocks at
+the first column (PERSIST step 3 in `agents/study_manager_agent.md`).
+
 ## Ethics derivation rules
 
 The 4-state strict-precedence derivation (NOT_YET_ASSESSED → ETHICS_BLOCKED
@@ -301,7 +305,10 @@ documents it rather than solving it.
 <!-- /INLINE-FROM-SPEC: Write protocol -->
 
 Step 5 is a run of `scripts/check_study_state.py` on the written file (see
-PERSIST in `agents/study_manager_agent.md`).
+PERSIST in `agents/study_manager_agent.md`). A second write in the same
+turn, such as the move to TRACK after the checker reports READY, compares
+with the revision the first write produced. Step 3's current time comes
+from the checker's `--now`.
 
 ## Resume protocol
 

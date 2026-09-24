@@ -3,19 +3,18 @@
 
 Usage:
     python3 scripts/check_study_state.py <path-to-state.md>
+    python3 scripts/check_study_state.py --now    (prints the current time)
 
-Exit codes: 0 = VALID, 1 = INVALID, 2 = cannot run (reason on stderr).
+Exit codes: 0 = VALID or --now printed the time, 1 = INVALID, 2 = cannot run (reason on stderr).
 Reads the artifact and references/study_state_protocol.md; writes nothing.
 Rules: docs/specs/2026-09-24-study-state-checker-design.md
 """
 
 import datetime
 import decimal
-import html
 import json
 import re
 import sys
-import unicodedata
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +37,8 @@ REQUIRED_FIELDS = ("schema_version", "study_id", "created", "updated", "revision
 ETHICS_SECTION = "Ethics Checklist Status"
 TRACK_SECTION = "TRACK Log"
 REQUIRED_SECTIONS = ("Protocol Summary", ETHICS_SECTION, TRACK_SECTION)
+SECTIONS = REQUIRED_SECTIONS + ("COLLECT Readiness",)  # the body's only headings, each written '## <name>'
+CHECKED_SECTIONS = (ETHICS_SECTION, TRACK_SECTION)  # the sections whose yaml blocks the checker reads
 # IRB approval reconfirmation set: these categories in full, plus these items.
 RECONFIRM_CATEGORIES = (1, 4)
 RECONFIRM_IDS = frozenset({"2.2", "2.3", "2.4", "2.5", "3.4", "3.5", "3.6", "5.2"})
@@ -67,8 +68,14 @@ LINE_END_RE = re.compile(r"\r\n|\r|\n")
 FENCE_RE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
 # A block quote marker, or a list marker with text after it (a lone "-" can underline a heading).
 CONTAINER_RE = re.compile(r" {0,3}(?:>|(?:[-+*]|\d{1,9}[.)])(?=[ \t]+\S))[ \t]?")
-ATX_RE = re.compile(r" {0,3}#{1,6}(?:[ \t]+(.*))?")
-SETEXT_RE = re.compile(r" {0,3}(?:=+|-+)[ \t]*")
+# A heading line once its markers and indentation are removed, and a line that underlines the text above
+# it into a heading once its indentation and quote markers are removed.
+ATX_RE = re.compile(r"#{1,6}(?:[ \t]|$)")
+UNDERLINE_RE = re.compile(r"(?:=+|-+)[ \t]*")
+# A thematic break, which ends a paragraph; and an ordered list item numbered other than 1, which cannot
+# interrupt a paragraph, so its line continues the paragraph.
+RULE_RE = re.compile(r" {0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})")
+LATE_ITEM_RE = re.compile(r" {0,3}(?!0*1[.)])\d{1,9}[.)]")
 TAG_NAME = r"[A-Za-z][A-Za-z0-9-]*"
 ATTRIBUTE = (r"[ \t\n]+[A-Za-z_:][A-Za-z0-9_.:-]*"
              r"""(?:[ \t\n]*=[ \t\n]*(?:[^ \t\n"'=<>`]+|'[^']*'|"[^"]*"))?""")
@@ -83,10 +90,10 @@ HTML_BLOCK_RE = re.compile(
     r"menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|source|summary|table|tbody|td|"
     r"tfoot|th|thead|title|tr|track|ul)(?:[ \t]|/?>|$))", re.IGNORECASE)
 HTML_DETAIL = "line %d has HTML, which can hide text from a reader; study state artifacts do not use HTML"
-LINK_TARGET_RE = re.compile(r"\]\([^)]*\)")
-# Markdown reads at most 7 decimal or 6 hexadecimal digits as a character reference.
-LONG_REFERENCE_RE = re.compile(r"&(?=#[0-9]{8}|#[xX][0-9a-fA-F]{7})")
-CHECKED_SECTIONS = (ETHICS_SECTION, TRACK_SECTION)  # the sections whose yaml blocks the checker reads
+OTHER_HEADING = ("line %d makes a heading other than the four section headings; the only headings are "
+                 + ", ".join(f"'## {name}'" for name in SECTIONS) + " (use bold text for a label)")
+MISPLACED_FENCE = ("line %d starts a code block that is not at the first column; start ``` at the first "
+                   "column, outside any list or quote")
 
 
 class CannotRun(Exception):
@@ -113,13 +120,13 @@ class Section:
     yaml_blocks: list  # (first content line, text) of each yaml or yml block
     open_fence: int = None  # line of a code fence still open at the end of the file
     html: int = None  # first line with HTML
-    other_code: str = None  # where the first code other than an unindented yaml block is
+    stray: str = None  # the first heading other than the four, or code block not at the first column
+    other_code: str = None  # where the first code other than a yaml block is
 
 
 class Layout(NamedTuple):
-    sections: list  # the text before the first '## ' line, then one Section per '## ' line
+    sections: list  # the text before the first section heading, then one Section per section heading
     hidden: dict  # heading of a '## ' line inside a code block -> (its line, the line that opened the block)
-    variants: dict  # checked section name -> first line of a heading that reads as it but is not '## <name>'
 
 
 class Result(NamedTuple):
@@ -169,10 +176,18 @@ def load_roster(protocol_path=PROTOCOL_PATH):
     return roster
 
 
+# Limits no artifact comes near: Python cannot read or print an integer of more than 4300 digits,
+# and its stack runs out at a few hundred levels of YAML nesting.
+MAX_NUMBER_LENGTH = 100
+MAX_NESTING = 100
+
+
 def _string_loader():
     """A SafeLoader that leaves timestamps, decimal numbers and a lone "=" as strings and rejects
-    tags, repeated keys and merge keys."""
+    tags, repeated keys, merge keys, overlong numbers and deep nesting."""
     class Loader(yaml.SafeLoader):
+        depth = 0  # nesting of the node being composed
+
         def compose_node(self, parent, index):
             # A tag such as !!timestamp or !!int builds a value that skips the checks that expect text,
             # or fails outside YAML's own errors.
@@ -182,7 +197,22 @@ def _string_loader():
                 raise yaml.composer.ComposerError(
                     None, None, f"found the tag {_q(shown)}, which study state artifacts do not use",
                     event.start_mark)
-            return super().compose_node(parent, index)
+            if self.depth == MAX_NESTING:
+                raise yaml.composer.ComposerError(
+                    None, None, f"found values nested more than {MAX_NESTING} levels deep, which study "
+                    "state artifacts do not use", event.start_mark)
+            self.depth += 1
+            try:
+                return super().compose_node(parent, index)
+            finally:
+                self.depth -= 1
+
+        def construct_yaml_int(self, node):
+            if len(node.value) > MAX_NUMBER_LENGTH:
+                raise yaml.constructor.ConstructorError(
+                    None, None, f"found a number longer than {MAX_NUMBER_LENGTH} characters, which study "
+                    "state artifacts do not use", node.start_mark)
+            return super().construct_yaml_int(node)
 
         def construct_mapping(self, node, deep=False):
             # PyYAML keeps the last of repeated keys; the value it drops could be the blocking one.
@@ -203,6 +233,7 @@ def _string_loader():
                     keys.add(key)
             return super().construct_mapping(node, deep=deep)
 
+    Loader.add_constructor("tag:yaml.org,2002:int", Loader.construct_yaml_int)
     dropped = ("tag:yaml.org,2002:timestamp", "tag:yaml.org,2002:float", "tag:yaml.org,2002:value")
     Loader.yaml_implicit_resolvers = {
         first: [(tag, regexp) for tag, regexp in resolvers if tag not in dropped]
@@ -247,12 +278,13 @@ def _numbered_lines(text):
 
 
 def split_frontmatter(lines):
-    """Return (frontmatter lines, body lines), or None when a delimiter is missing."""
-    if not lines or lines[0][1].rstrip() != "---":
+    """Return (frontmatter lines, body lines), or None when a delimiter is missing or is "---" with
+    whitespace after it, which readers differ on."""
+    if not lines or lines[0][1] != "---":
         return None
     for index in range(1, len(lines)):
         if lines[index][1].rstrip() == "---":
-            return lines[1:index], lines[index + 1:]
+            return (lines[1:index], lines[index + 1:]) if lines[index][1] == "---" else None
     return None
 
 
@@ -285,24 +317,6 @@ def _strip_containers(text):
         position = match.end()
 
 
-def _names_in(heading):
-    """The checked section names that a reader sees, word for word, in heading text: character
-    references decoded, compatibility forms folded, link targets and emphasis marks dropped, and
-    every character that does not print on its own (combining marks, format characters) removed."""
-    text = unicodedata.normalize("NFKD", html.unescape(LONG_REFERENCE_RE.sub("&amp;", heading)))
-    cut = text.rfind(")") + 1  # no link target ends after the last ")"; keeps the pattern from rescanning
-    text = LINK_TARGET_RE.sub("", text[:cut]) + text[cut:]
-    text = "".join(char for char in text
-                   if char not in "*_~`\\" and not unicodedata.category(char).startswith(("M", "Cf")))
-    words = " %s " % " ".join(re.findall(r"\w+", text.casefold()))
-    return [name for name in CHECKED_SECTIONS if f" {name.casefold()} " in words]
-
-
-def _note_code(section, where):
-    """Record the first code in a section other than an unindented yaml block."""
-    section.other_code = section.other_code or where
-
-
 def _first_html(run):
     """The first line with HTML in a run of (line number, text) outside code blocks, or None."""
     lines = [number for number, text in run if HTML_BLOCK_RE.match(_strip_containers(text))]
@@ -314,12 +328,14 @@ def _first_html(run):
 
 
 def split_sections(body):
-    """Read the body's layout: its '## ' sections, their yaml blocks, and whatever could show a
-    reader something other than what the checker reads (HTML, code outside the yaml block, a
-    heading for a checked section written another way or inside a code block, an unclosed fence)."""
-    sections, hidden, variants = [Section(None, 0, [])], {}, {}
+    """Read the body's layout: its sections, their yaml blocks, other code, and whatever could show a
+    reader something other than what the checker reads (HTML, a heading other than the four section
+    headings, a code block not at the first column, a section heading inside a code block, an
+    unclosed fence)."""
+    sections, hidden = [Section(None, 0, [])], {}
     fence = fence_line = block = None
-    run, paragraph = [], []  # lines outside code blocks since the last heading or fence; the open paragraph
+    run = []  # lines outside code blocks since the last section heading or fence
+    paragraph = None  # for an open paragraph: whether it is outside any list or quote
     for number, text in body:
         section = sections[-1]
         heading = text[3:].rstrip() if text.startswith("## ") else None
@@ -334,49 +350,48 @@ def split_sections(body):
             if heading is not None:
                 hidden.setdefault(heading, (number, fence_line))
             continue
+        starts_section = heading in SECTIONS
         opening = _fence_opening(text)
-        if opening or heading is not None:
+        stripped = _strip_containers(text)
+        content = stripped.lstrip(" \t")
+        misplaced = content != text and _fence_opening(content)  # indented, or in a list or quote
+        if misplaced:
+            section.stray = section.stray or MISPLACED_FENCE % number
+        if opening or starts_section:
             section.html = section.html or _first_html(run)
-            run, paragraph = [], []
+            run, paragraph = [], None
         if opening:
             fence, info = opening
             fence_line = number
             if re.split(r"[ \t]", info, maxsplit=1)[0].lower() in ("yaml", "yml"):
                 block = []
-                if text.startswith(" "):
-                    _note_code(section, f"the yaml block on line {number} is indented (start its ``` line "
-                                        "at the first column)")
             else:
-                _note_code(section, f"the code block on line {number} is not a yaml block")
+                section.other_code = (section.other_code
+                                      or f"the code block on line {number} is not a yaml block")
             continue
         run.append((number, text))
-        if heading is not None:
+        if starts_section:
             sections.append(Section(heading, number, []))
-            for name in _names_in(heading):
-                if name != heading:
-                    variants.setdefault(name, number)
             continue
-        stripped = _strip_containers(text)
-        if stripped != text and _fence_opening(stripped):
-            _note_code(section, f"line {number} starts a code block inside a quote or list")
-        elif stripped.strip(" \t") and stripped.expandtabs(4).startswith("    "):
-            _note_code(section, f"line {number} is indented, which makes it code")
-        atx = ATX_RE.fullmatch(stripped)
-        if atx or (paragraph and SETEXT_RE.fullmatch(stripped)):
-            # A heading a reader sees: '#' marks, or text underlined with '=' or '-'.
-            content, start = ((atx.group(1) or "", number) if atx
-                              else (" ".join(paragraph), number - len(paragraph)))
-            for name in _names_in(content):
-                variants.setdefault(name, start)
-            paragraph = []
-        elif stripped.strip(" \t"):
-            paragraph.append(stripped)
-        else:
-            paragraph = []
+        indented = stripped.expandtabs(4).startswith("    ")
+        if content and indented and not misplaced:
+            section.other_code = section.other_code or f"line {number} is indented, which makes it code"
+        underline = text.lstrip(" \t>")
+        if ATX_RE.match(content) or (paragraph is not None and UNDERLINE_RE.fullmatch(underline)
+                                     and (paragraph or underline != text)):
+            # A heading a reader sees. An underline at the first column under a paragraph in a list or quote
+            # ends the list or quote instead.
+            section.stray = section.stray or OTHER_HEADING % number
+            paragraph = None
+        elif not content or RULE_RE.fullmatch(text) or (paragraph is None and indented):
+            paragraph = None  # a blank line, a thematic break, or indented code
+        elif paragraph is None or (stripped != text and not LATE_ITEM_RE.match(text)):
+            # A paragraph starts, in a list or quote when the line has their markers.
+            paragraph = stripped == text
     if fence:
         sections[-1].open_fence = fence_line
     sections[-1].html = sections[-1].html or _first_html(run)
-    return Layout(sections, hidden, variants)
+    return Layout(sections, hidden)
 
 
 def _oneline(text):
@@ -495,11 +510,10 @@ def _section_block(layout, name, rule, keys, problems):
     elif name in layout.hidden:
         detail = ("another heading for this section on line %d is inside a code block opened on line %d; "
                   "the section must appear once" % layout.hidden[name])
-    elif name in layout.variants:
-        detail = (f"the heading on line {layout.variants[name]} reads as this section's name but is not "
-                  f"'## {name}'; the section must appear once, under exactly that heading")
     elif section.html:
         detail = HTML_DETAIL % section.html
+    elif section.stray:
+        detail = section.stray
     elif section.open_fence:
         detail = f"a code block opened on line {section.open_fence} is never closed"
     elif len(section.yaml_blocks) != 1:
@@ -624,7 +638,7 @@ def derive(ethics, roster):
             approved = parse_timestamp(changed_at)
             stale = [item.item_id for item in roster
                      if in_reconfirmation_set(item) and status_of(item) == "PASS"
-                     and parse_timestamp(by_id[item.item_id]["answered_at"]) < approved]
+                     and parse_timestamp(by_id[item.item_id]["answered_at"]) <= approved]
             if stale:
                 reasons.append(f"not reconfirmed since IRB approval at {changed_at}: " + ", ".join(stale))
     reasons += [_needs_action_reason(item) for item in roster
@@ -639,8 +653,8 @@ def check_artifact(text, roster):
     problems = []
     split = split_frontmatter(_numbered_lines(text))
     if split is None:
-        problems.append(Problem(V1, "frontmatter", "the file must start with a '---' line "
-                                "and close the frontmatter with another '---' line"))
+        problems.append(Problem(V1, "frontmatter", "the file must start with a line that is exactly '---' "
+                                "and close the frontmatter with another such line"))
         return Result(problems, None, None, None, [])
     frontmatter_lines, body = split
     frontmatter, error = _parse_yaml("\n".join(line for _, line in frontmatter_lines), 2,
@@ -657,13 +671,15 @@ def check_artifact(text, roster):
             if name in layout.hidden:
                 detail += (" (its heading on line %d is inside a code block opened on line %d)"
                            % layout.hidden[name])
-            elif name in layout.variants:
-                detail += f" (the heading on line {layout.variants[name]} is not written '## {name}')"
             problems.append(Problem(V7, f"## {name}", detail))
     for section in layout.sections:
-        if section.html and section.heading not in CHECKED_SECTIONS:
-            # HTML can hide a section heading; the checked sections report it under their own rule.
-            problems.append(Problem(V7, "body", HTML_DETAIL % section.html))
+        if section.heading not in CHECKED_SECTIONS:
+            # HTML or a code block not at the first column can hide a section, and another heading can
+            # pass for one; the checked sections report these under their own rule.
+            if section.html:
+                problems.append(Problem(V7, "body", HTML_DETAIL % section.html))
+            if section.stray:
+                problems.append(Problem(V7, "body", section.stray))
     ethics = _section_block(layout, ETHICS_SECTION, V8, "items and irb", problems)
     if ethics is not None:
         check_ethics(ethics, roster, problems)
@@ -710,11 +726,17 @@ def format_result(path, result, roster):
 
 
 def main(argv=None):
-    """Check one artifact; print the report and return the exit code."""
+    """Check one artifact, or with --now print the current time; return the exit code."""
     args = sys.argv[1:] if argv is None else argv
+    if args == ["--now"]:
+        # The agent records every current time from here, so recorded times compare in the order they
+        # happened.
+        print(datetime.datetime.now().astimezone().isoformat(timespec="seconds"))
+        return 0
     try:
         if len(args) != 1:
-            raise CannotRun("usage: python3 check_study_state.py <path-to-state.md>")
+            raise CannotRun("usage: python3 check_study_state.py <path-to-state.md>, "
+                            "or --now for the current time")
         if yaml is None:
             raise CannotRun(f"PyYAML is not installed for {sys.executable} "
                             "(python3 -m pip install pyyaml)")
