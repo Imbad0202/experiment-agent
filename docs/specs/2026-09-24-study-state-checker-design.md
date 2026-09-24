@@ -105,9 +105,14 @@ cannot build.
 The checker accepts only the layout the agent writes (the template's). It
 reads that layout the way a CommonMark reader such as GitHub does, and
 treats as malformed anything else that could show a reader something other
-than what the checker reads.
+than what the checker reads. It does not work out lists and quotes, so a
+layout a reader might read either way is malformed.
 
 - **Lines** end at CRLF, CR, or LF.
+- **Container markers**: `>`; a list marker (`-`, `+`, `*`, or up to nine
+  ASCII digits and `.` or `)`) with a space or tab and text after it; and
+  a footnote label such as `[^1]:`, which GitHub reads as the start of a
+  footnote that holds blocks.
 - **Frontmatter**: the first line (after an optional UTF-8 byte order mark)
   must be exactly `---`, and the frontmatter ends at the next line that is
   `---`. That line must also be exactly `---`: readers differ on whether
@@ -118,8 +123,8 @@ than what the checker reads.
   line of up to three spaces, the same character at least as many times,
   and then only spaces or tabs. Otherwise it runs to the end of the file.
   A fence must open at the first column: an opening line indented by
-  spaces or a tab, or inside a block quote or list, is malformed anywhere
-  in the body. A reader ends such a block where the list item or quote
+  spaces or a tab, or after container markers at any depth, is malformed
+  anywhere in the body. A reader ends such a block where its container
   ends, while the checker would read on.
 - **Sections**: in the body after the frontmatter, outside fenced code
   blocks, a line that is `## ` and one of the four section names (Protocol
@@ -129,22 +134,28 @@ than what the checker reads.
   word is `yaml` or `yml` (any case).
 - **Checked sections**: Ethics Checklist Status and TRACK Log, the two whose
   yaml blocks the checker reads. Each holds only text and its one yaml
-  block.
+  block. A line indented four or more columns once container markers
+  (each after at most three spaces) are removed is code; a tab reaches
+  the next multiple of four columns, as it does for a reader.
 - **HTML**: outside fenced code blocks, a tag (`<name …>` or `</name>`, as
   CommonMark defines one, even across lines), `<!--`, `<?`, `<!` followed by
   a letter, `<![CDATA[`, or a line that opens an HTML block before its tag
-  is complete (such as `<div`), also after block quote or list markers.
-  A reader does not see HTML as written, and some of it hides what follows.
+  is complete (such as `<div`), also after container markers and
+  indentation at any depth. Whitespace in a tag is any character Python
+  counts as whitespace, so a vertical tab or a form feed, which GitHub
+  takes as a space there, counts too. A reader does not see HTML as
+  written, and some of it hides what follows.
 - **Other headings**: the four section headings are the body's only
   headings. Any other heading a reader could see is malformed: a line that,
-  once block quote and list markers and indentation are removed, starts
+  once container markers and indentation are removed at any depth, starts
   with one to six `#` and then a space, a tab or the end of the line; or a
-  line of `=` or `-` under paragraph text. A paragraph runs, over indented
-  lines too, until a blank line, a thematic break, or a list item or quote
-  that interrupts it. An underline at the first column under a paragraph in
-  a list or quote is left alone, because it ends the list or quote instead.
-  A section name written another way (with a link, look-alike letters,
-  indented, or inside a list or quote) is caught without comparing names.
+  line of `=` or `-`, after any indentation and `>` markers, right under a
+  line that is not blank (only spaces or tabs), a section heading or a
+  code fence line. The second counts even where a reader sees a rule, such
+  as under a list item, a quote, a line with only markers, or another
+  rule; a blank line above a rule keeps it a rule. A section name written
+  another way (with a link, look-alike letters, indented, or inside a
+  list, quote or footnote) is caught without comparing names.
 - **Repeated keys**: a key that appears twice in one YAML mapping is a parse
   error (V2 in the frontmatter, V8 or V9 in a block). YAML does not allow
   it, and keeping either value could hide a blocking answer.
@@ -154,9 +165,17 @@ than what the checker reads.
   skips the checks that expect text, or fails outside YAML's own errors.
   The agent writes neither.
 - **Size limits**: an integer written with more than 100 characters, or
-  values nested more than 100 levels deep, is a parse error. Python cannot
-  read or print an integer of more than 4300 digits, and its stack runs out
-  at a few hundred levels of nesting; no artifact comes near either limit.
+  values nested more than 100 levels deep, directly or through aliases
+  (an alias inside the value it names nests without end), is a parse
+  error. Python cannot read or print an integer of more than 4300 digits,
+  and its stack runs out at a few hundred levels of nesting; no artifact
+  comes near either limit.
+- **Malformed numbers**: a value that YAML 1.1 reads as a number but that
+  has no digits, such as `0b_` or `0x_`, is a parse error.
+- **Line separators**: NEL (U+0085), LINE SEPARATOR (U+2028) or
+  PARAGRAPH SEPARATOR (U+2029) in the frontmatter or a checked yaml block
+  is a parse error. YAML ends a line at them and a Markdown reader does
+  not, so the two would read different lines.
 
 ### Validation rules
 
@@ -168,7 +187,7 @@ lists and parentheses, so the agent can tell the user which rule failed.
 
 | # | Rule | Precise definition |
 |---|---|---|
-| V1 | Missing frontmatter delimiters | No `---` first line, or no closing `---` line; or either one has spaces or tabs after `---` |
+| V1 | Missing frontmatter delimiters | No `---` first line, or no closing `---` line; or either one has whitespace after `---` |
 | V2 | Frontmatter is not parseable YAML | Parse error, or the result is not a mapping |
 | V3 | Required frontmatter field missing | `schema_version`, `study_id`, `created`, `updated`, `revision`, or `current_phase` is absent, null, or an empty string |
 | V4 | `schema_version` is not a known version | Not the integer `1` |
@@ -407,16 +426,19 @@ follow the shipped files. Tests run on Python 3.9 and on a current Python 3.
 | `## Ethics Checklist Status` appears twice | INVALID, V8 |
 | `## TRACK Log` removed | INVALID, V7 |
 | Event `kind: note` | INVALID, V9 |
-| HTML in a checked section; HTML elsewhere in the body; the blank template's `<…>` placeholders | INVALID, V8 or V9; INVALID, V7 at `body`; VALID |
-| In a checked section: its heading indented, with a tab, closing `#`s, two spaces, another level, an invisible character, a combining mark inside a word, a look-alike letter, a link, in a block quote, or underlined (also with a single `-`, after an indented line, over two lines, or after a line starting `2)`); a sub-heading | INVALID, V8 or V9 |
-| Elsewhere in the body: a title before the first section, a sub-heading, a heading inside a list item, a section name underlined after an indented line or over two lines | INVALID, V7 at `body` |
-| `#pilot`, `\# text`, `---` after a list or quote line (also after a list item's second line or a quote's unmarked second line), `---` after indented code, `- - -` after text | Text; no problem |
-| A plain code block or an indented line in a checked section, also after `>` or `-` | INVALID, V8 or V9 |
-| A code fence indented with spaces or a tab, in a list item, or in a quote, in any section; a decoy after a code block in a list item | INVALID (V7 at `body`, or V8 or V9) |
+| HTML in a checked section; HTML elsewhere in the body, also a `<script` line in a nested list item or a footnote, a `<script` followed by a vertical tab, or a tag with a form feed before `>`; the blank template's `<…>` placeholders | INVALID, V8 or V9; INVALID, V7 at `body`; VALID |
+| In a checked section: its heading indented, with a tab, closing `#`s, two spaces, another level, an invisible character, a combining mark inside a word, a look-alike letter, a link, in a block quote, or underlined (also with a single `-`, after an indented line, over two lines, after a line starting `2)`, or after a line with only markers such as `2. >`); a sub-heading | INVALID, V8 or V9 |
+| Elsewhere in the body: a title before the first section, a sub-heading, a heading inside a list item or a list nested four spaces deep, a section name underlined after an indented line, over two lines, after a digit from another script (U+0661), or after a line with only an indented `>`; a heading in a footnote; a line of `-` right under a list item or a quote | INVALID, V7 at `body` |
+| `#pilot` (also in a nested list item), `\# text`, `---` after a blank line, `- - -` after text, a footnote with text | Text; no problem |
+| A plain code block or an indented line in a checked section, also after `>` or `-`, or after `>` or `-` and a tab | INVALID, V8 or V9 |
+| `>`, a tab, then text in a checked section | Text; no problem |
+| A code fence indented with spaces or a tab, in a list item, a nested list item, a quote or a footnote, in any section; a decoy after a code block in a list item | INVALID (V7 at `body`, or V8 or V9) |
 | A closing fence indented four spaces or a tab, or followed by an ideographic space | The block stays open |
 | CR line endings | Same result as LF |
 | A merge key; a tag such as `!!timestamp` or `!!int abc` | INVALID, parse error |
-| An integer of 5,000 digits, also in base 60; values nested 500 levels deep | INVALID, parse error |
+| An integer of 5,000 digits, also in base 60; values nested 500 levels deep, or 150 levels through aliases | INVALID, parse error |
+| `0b_`, `0x_` or `-0b_` as a value, in the frontmatter or a checked block | INVALID, parse error |
+| U+0085, U+2028 or U+2029 in the frontmatter or a checked block | INVALID, parse error |
 | `=` as a key or a value | A string |
 | No frontmatter delimiter; a delimiter with a space, a tab, a no-break space or an ideographic space after `---` | INVALID, V1 |
 | `--now`, with and without PyYAML | Exit 0; one date-time with offset, within a minute of the test's clock |
@@ -442,10 +464,12 @@ recruitment must stop.
   yaml block in a checked section is INVALID, even when a person wrote it by
   hand. Some text counts that a person may not mean as such: `` `<br>` `` in
   inline code, or a placeholder such as `<to be decided>`, which CommonMark
-  reads as a tag and GitHub does not show; a `#` line inside an indented
-  code block, which counts as a heading; and a line of `-` or `=` right
-  after a list item's second paragraph, or indented four or more columns
-  under text, which counts as an underline.
+  reads as a tag and GitHub does not show; a `#` line, an HTML block start
+  or a code fence inside an indented code block, which count as a heading,
+  HTML or a misplaced fence; and a line of `-` or `=` right under a line
+  that is not blank, also where a reader sees a rule (under a list item, a
+  quote, a line with only `>`, or another rule), which counts as an
+  underline (a blank line above a rule avoids it).
 - Derived status can become stricter for v1.1.0 artifacts (missing answer
   times, reconfirmation not done after approval). For a study already in
   TRACK, the agent then says recruitment must stop until the listed items are
@@ -483,3 +507,6 @@ recruitment must stop.
 | 2026-09-25 | A reconfirmation answer counts only when it is later than the approval; the agent takes every current time from the checker's `--now` | Answers and an approval recorded in the same minute counted as reconfirmed, and the agent had no clock. User choice |
 | 2026-09-25 | A frontmatter delimiter is exactly `---`; `---` with spaces or tabs after it is malformed | Readers differ on such a line, so the checker and a reader could disagree on where the frontmatter ends |
 | 2026-09-25 | The move to TRACK after READY is a full PERSIST write whose stale-write check expects the revision of the turn's first write | The 2026-05-02 write protocol compares with the revision at the start of the turn, which a second write in the same turn cannot match |
+| 2026-09-25 | Headings, HTML and code fences are found after removing list and quote markers and indentation at any depth, and a line of `-` or `=` right under any line that is not blank, other than a section heading or a code fence line, is an underline; lists and quotes are not worked out | The fourth review round found a heading and an HTML block in a list nested four spaces deep, and a digit from another script that the list model read as a list marker. Each round of modelling lists and quotes more closely had left another layout. Applies the user's strict-layout choices; the cost is that a few layouts a reader shows as rules or code are rejected |
+| 2026-09-25 | Nesting counts through aliases; numbers without digits and the line separators U+0085, U+2028 and U+2029 are parse errors | An alias chain or `0b_` made the checker exit 2, and YAML ends a line at those separators where a reader does not |
+| 2026-09-25 | A footnote label is a container marker; a line with only markers is not blank; a tab after a marker reaches the next multiple of four columns; whitespace in a tag is any Python whitespace | The review of the round-4 changes found a heading let through by a line with only `>` or `2. >` above its underline, a heading, HTML block or code fence inside a GitHub footnote, indented code after `>` and a tab in a checked section, and `<script` or `<details` followed by a vertical tab or a form feed, which readers take as HTML |

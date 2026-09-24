@@ -66,32 +66,37 @@ LINE_BREAK_RE = re.compile(r"[\x00-\x1f\x7f\x85\u2028\u2029]")
 # something other than what the checker reads.
 LINE_END_RE = re.compile(r"\r\n|\r|\n")
 FENCE_RE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
-# A block quote marker, or a list marker with text after it (a lone "-" can underline a heading).
-CONTAINER_RE = re.compile(r" {0,3}(?:>|(?:[-+*]|\d{1,9}[.)])(?=[ \t]+\S))[ \t]?")
+# A block quote marker, a footnote label (GitHub reads a footnote as a container), or a list marker
+# with text after it.
+CONTAINER_MARKER = r"(?:>|\[\^[^\]]+\]:|(?:[-+*]|[0-9]{1,9}[.)])(?=[ \t]+\S))[ \t]?"
+# The markers where a reader takes them, for finding indented code by its columns.
+CONTAINER_RE = re.compile(r" {0,3}" + CONTAINER_MARKER)
+# The same markers after any indentation, as in a list nested in a list item.
+ANY_CONTAINER_RE = re.compile(r"[ \t]*" + CONTAINER_MARKER)
 # A heading line once its markers and indentation are removed, and a line that underlines the text above
 # it into a heading once its indentation and quote markers are removed.
 ATX_RE = re.compile(r"#{1,6}(?:[ \t]|$)")
 UNDERLINE_RE = re.compile(r"(?:=+|-+)[ \t]*")
-# A thematic break, which ends a paragraph; and an ordered list item numbered other than 1, which cannot
-# interrupt a paragraph, so its line continues the paragraph.
-RULE_RE = re.compile(r" {0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})")
-LATE_ITEM_RE = re.compile(r" {0,3}(?!0*1[.)])\d{1,9}[.)]")
 TAG_NAME = r"[A-Za-z][A-Za-z0-9-]*"
-ATTRIBUTE = (r"[ \t\n]+[A-Za-z_:][A-Za-z0-9_.:-]*"
-             r"""(?:[ \t\n]*=[ \t\n]*(?:[^ \t\n"'=<>`]+|'[^']*'|"[^"]*"))?""")
-# A tag anywhere, a comment, a processing instruction, a declaration, or CDATA.
-HTML_RE = re.compile(rf"<{TAG_NAME}(?:{ATTRIBUTE})*[ \t\n]*/?>|</{TAG_NAME}[ \t\n]*>"
+ATTRIBUTE = (r"\s+[A-Za-z_:][A-Za-z0-9_.:-]*"
+             r"""(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?""")
+# A tag anywhere, a comment, a processing instruction, a declaration, or CDATA. Whitespace in a tag is
+# any that a reader might take, a vertical tab or a form feed included.
+HTML_RE = re.compile(rf"<{TAG_NAME}(?:{ATTRIBUTE})*\s*/?>|</{TAG_NAME}\s*>"
                      r"|<!--|<\?|<![A-Za-z]|<!\[CDATA\[")
-# A line that opens an HTML block before its tag is complete.
+# A line that opens an HTML block before its tag is complete, once its markers and indentation are removed.
 HTML_BLOCK_RE = re.compile(
-    r" {0,3}(?:<(?:script|pre|style|textarea)(?:[ \t>]|$)|</?(?:address|article|aside|base|basefont|"
+    r"<(?:script|pre|style|textarea)(?:[\s>]|$)|</?(?:address|article|aside|base|basefont|"
     r"blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|"
     r"figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|"
     r"menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|source|summary|table|tbody|td|"
-    r"tfoot|th|thead|title|tr|track|ul)(?:[ \t]|/?>|$))", re.IGNORECASE)
+    r"tfoot|th|thead|title|tr|track|ul)(?:\s|/?>|$)", re.IGNORECASE)
 HTML_DETAIL = "line %d has HTML, which can hide text from a reader; study state artifacts do not use HTML"
-OTHER_HEADING = ("line %d makes a heading other than the four section headings; the only headings are "
-                 + ", ".join(f"'## {name}'" for name in SECTIONS) + " (use bold text for a label)")
+HEADINGS_ONLY = "the only headings are " + ", ".join(f"'## {name}'" for name in SECTIONS)
+OTHER_HEADING = ("line %d makes a heading other than the four section headings; " + HEADINGS_ONLY
+                 + " (use bold text for a label)")
+UNDERLINED = ("line %d is a line of '-' or '=' right under text, which can make that text a heading; "
+              + HEADINGS_ONLY + " (leave a blank line above a rule, and use bold text for a label)")
 MISPLACED_FENCE = ("line %d starts a code block that is not at the first column; start ``` at the first "
                    "column, outside any list or quote")
 
@@ -180,13 +185,21 @@ def load_roster(protocol_path=PROTOCOL_PATH):
 # and its stack runs out at a few hundred levels of YAML nesting.
 MAX_NUMBER_LENGTH = 100
 MAX_NESTING = 100
+TOO_DEEP = f"found values nested more than {MAX_NESTING} levels deep, which study state artifacts do not use"
+# YAML also ends a line at these characters and a Markdown reader does not, so the two would read
+# different lines.
+YAML_ONLY_LINE_BREAK_RE = re.compile(r"[\x85\u2028\u2029]")
 
 
 def _string_loader():
     """A SafeLoader that leaves timestamps, decimal numbers and a lone "=" as strings and rejects
-    tags, repeated keys, merge keys, overlong numbers and deep nesting."""
+    tags, repeated keys, merge keys, overlong or malformed numbers and deep nesting."""
     class Loader(yaml.SafeLoader):
         depth = 0  # nesting of the node being composed
+
+        def __init__(self, stream):
+            super().__init__(stream)
+            self.heights = {}  # each composed node: its levels of nesting, through aliases
 
         def compose_node(self, parent, index):
             # A tag such as !!timestamp or !!int builds a value that skips the checks that expect text,
@@ -198,21 +211,37 @@ def _string_loader():
                     None, None, f"found the tag {_q(shown)}, which study state artifacts do not use",
                     event.start_mark)
             if self.depth == MAX_NESTING:
-                raise yaml.composer.ComposerError(
-                    None, None, f"found values nested more than {MAX_NESTING} levels deep, which study "
-                    "state artifacts do not use", event.start_mark)
+                raise yaml.composer.ComposerError(None, None, TOO_DEEP, event.start_mark)
             self.depth += 1
             try:
-                return super().compose_node(parent, index)
+                node = super().compose_node(parent, index)
             finally:
                 self.depth -= 1
+            # An alias repeats a node without nesting in the text, so the node's height counts where the
+            # alias sits. An alias inside the node it names finds no height yet: it nests without end.
+            # Any other node is no deeper than its children, which were checked when they were composed.
+            if isinstance(event, yaml.AliasEvent):
+                height = self.heights.get(node)
+                if height is None or self.depth + height > MAX_NESTING:
+                    raise yaml.composer.ComposerError(None, None, TOO_DEEP, event.start_mark)
+                return node
+            if isinstance(node, yaml.MappingNode):
+                children = [child for pair in node.value for child in pair]
+            else:
+                children = node.value if isinstance(node, yaml.SequenceNode) else []
+            self.heights[node] = 1 + max((self.heights[child] for child in children), default=0)
+            return node
 
         def construct_yaml_int(self, node):
             if len(node.value) > MAX_NUMBER_LENGTH:
                 raise yaml.constructor.ConstructorError(
                     None, None, f"found a number longer than {MAX_NUMBER_LENGTH} characters, which study "
                     "state artifacts do not use", node.start_mark)
-            return super().construct_yaml_int(node)
+            try:
+                return super().construct_yaml_int(node)
+            except ValueError:  # YAML 1.1 reads 0b_ and 0x_ as numbers, which then have no digits
+                raise yaml.constructor.ConstructorError(
+                    None, None, f"found the malformed number {_q(node.value)}", node.start_mark) from None
 
         def construct_mapping(self, node, deep=False):
             # PyYAML keeps the last of repeated keys; the value it drops could be the blocking one.
@@ -244,6 +273,12 @@ def _string_loader():
 
 def load_yaml(text):
     """Parse YAML safely; timestamps stay strings and item IDs stay as written."""
+    separator = YAML_ONLY_LINE_BREAK_RE.search(text)
+    if separator:
+        line = text.count("\n", 0, separator.start())
+        raise yaml.MarkedYAMLError(
+            None, None, "found the line separator U+%04X, which study state artifacts do not use"
+            % ord(separator.group()), yaml.Mark("<artifact>", separator.start(), line, 0, None, None))
     return yaml.load(text, Loader=_string_loader())
 
 
@@ -307,20 +342,20 @@ def _fence_closes(text, fence):
             and closing[0][0] == fence[0] and len(closing[0]) >= len(fence))
 
 
-def _strip_containers(text):
-    """The line without the block quote and list markers it starts with."""
+def _strip_containers(text, markers=CONTAINER_RE):
+    """The line without the container markers (block quote, list, footnote) it starts with."""
     position = 0
     while True:
-        match = CONTAINER_RE.match(text, position)
+        match = markers.match(text, position)
         if not match:
             return text[position:]
         position = match.end()
 
 
 def _first_html(run):
-    """The first line with HTML in a run of (line number, text) outside code blocks, or None."""
-    lines = [number for number, text in run if HTML_BLOCK_RE.match(_strip_containers(text))]
-    joined = "\n".join(text for _, text in run)
+    """The first line with HTML in a run of (line number, text, content) outside code blocks, or None."""
+    lines = [number for number, _, content in run if HTML_BLOCK_RE.match(content)]
+    joined = "\n".join(text for _, text, _ in run)
     match = HTML_RE.search(joined)  # a tag can span lines
     if match:
         lines.append(run[joined.count("\n", 0, match.start())][0])
@@ -335,7 +370,7 @@ def split_sections(body):
     sections, hidden = [Section(None, 0, [])], {}
     fence = fence_line = block = None
     run = []  # lines outside code blocks since the last section heading or fence
-    paragraph = None  # for an open paragraph: whether it is outside any list or quote
+    after_text = False  # whether the line above is one that a line of - or = could underline
     for number, text in body:
         section = sections[-1]
         heading = text[3:].rstrip() if text.startswith("## ") else None
@@ -352,14 +387,14 @@ def split_sections(body):
             continue
         starts_section = heading in SECTIONS
         opening = _fence_opening(text)
-        stripped = _strip_containers(text)
-        content = stripped.lstrip(" \t")
-        misplaced = content != text and _fence_opening(content)  # indented, or in a list or quote
+        # The line once its container markers and indentation are removed, however deep they go.
+        content = _strip_containers(text, ANY_CONTAINER_RE).lstrip(" \t")
+        misplaced = content != text and _fence_opening(content)  # indented, or in a container
         if misplaced:
             section.stray = section.stray or MISPLACED_FENCE % number
         if opening or starts_section:
             section.html = section.html or _first_html(run)
-            run, paragraph = [], None
+            run, after_text = [], False
         if opening:
             fence, info = opening
             fence_line = number
@@ -369,25 +404,21 @@ def split_sections(body):
                 section.other_code = (section.other_code
                                       or f"the code block on line {number} is not a yaml block")
             continue
-        run.append((number, text))
+        run.append((number, text, content))
         if starts_section:
             sections.append(Section(heading, number, []))
             continue
-        indented = stripped.expandtabs(4).startswith("    ")
-        if content and indented and not misplaced:
+        # A tab reaches the next multiple of 4 columns, for a reader too, so tabs go before the markers.
+        stripped = _strip_containers(text.expandtabs(4))
+        if stripped.strip(" \t") and not misplaced and stripped.startswith("    "):
             section.other_code = section.other_code or f"line {number} is indented, which makes it code"
-        underline = text.lstrip(" \t>")
-        if ATX_RE.match(content) or (paragraph is not None and UNDERLINE_RE.fullmatch(underline)
-                                     and (paragraph or underline != text)):
-            # A heading a reader sees. An underline at the first column under a paragraph in a list or quote
-            # ends the list or quote instead.
+        # A heading a reader could see. Lists and quotes are not worked out, so a line of - or = right under
+        # any line that is not blank counts, even where a reader sees a rule that ends a list or quote.
+        if ATX_RE.match(content):
             section.stray = section.stray or OTHER_HEADING % number
-            paragraph = None
-        elif not content or RULE_RE.fullmatch(text) or (paragraph is None and indented):
-            paragraph = None  # a blank line, a thematic break, or indented code
-        elif paragraph is None or (stripped != text and not LATE_ITEM_RE.match(text)):
-            # A paragraph starts, in a list or quote when the line has their markers.
-            paragraph = stripped == text
+        elif after_text and UNDERLINE_RE.fullmatch(text.lstrip(" \t>")):
+            section.stray = section.stray or UNDERLINED % number
+        after_text = bool(text.strip(" \t"))
     if fence:
         sections[-1].open_fence = fence_line
     sections[-1].html = sections[-1].html or _first_html(run)

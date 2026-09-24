@@ -371,8 +371,10 @@ and validation rules are defined in `references/study_state_protocol.md`.
      counts as HTML. Leave the template's own `<...>` placeholders as they
      are until you replace them with plain text.
    - Write the four section headings exactly `## <name>`, once each, and
-     no other heading anywhere, Protocol Summary included: no `#` lines
-     and no text underlined with `=` or `-`. Use bold text for a label.
+     no other heading anywhere in the body, Protocol Summary included: no
+     `#` lines, also inside a list or quote, and no line of `=` or `-`
+     right under another line (leave a blank line above a rule, also
+     after a list or quote). Use bold text for a label.
    - Start every code block's ``` line at the first column, outside any
      list or quote. In Ethics Checklist Status and TRACK Log, write only
      text and the one yaml block.

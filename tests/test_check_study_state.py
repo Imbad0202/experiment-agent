@@ -22,6 +22,7 @@ TEMPLATE = (REPO / "templates" / "study_state.md").read_text(encoding="utf-8")
 EXAMPLE_PATH = "studies/pacific-rim-sustainability-2026/state.md"
 # The example's Ethics Checklist Status yaml block, with its fences.
 ETHICS_BLOCK = EXAMPLE[EXAMPLE.index("```yaml\nitems:"):EXAMPLE.index("```\n\n## TRACK Log") + len("```\n")]
+NOTE = 'note: "Survey only, no physical procedures"'  # a line in the example's Ethics block
 
 
 def load_checker():
@@ -255,6 +256,15 @@ class StructureTest(unittest.TestCase):
                                            checker.V9, "## TRACK Log"),
             "comment in another section": ("## Protocol Summary\n", "## Protocol Summary\n\n> <!--\n-->\n",
                                            checker.V7, "body"),
+            "script in a nested list item": ("## Protocol Summary\n",
+                                             "## Protocol Summary\n\n- Parent\n    - <script\n", checker.V7, "body"),
+            "script in a footnote": ("## Protocol Summary\n",
+                                     "## Protocol Summary\n\nSee the note.[^n]\n\n[^n]: <script\n", checker.V7, "body"),
+            # GitHub and other readers also take a vertical tab or a form feed as the space after a tag name.
+            "block start and a vertical tab": ("## Protocol Summary\n", "## Protocol Summary\n\n<script" + chr(11) + "\n",
+                                               checker.V7, "body"),
+            "tag with a form feed": ("## Protocol Summary\n",
+                                     "## Protocol Summary\n\nText <details" + chr(12) + "> more\n", checker.V7, "body"),
         }
         for name, (old, new, rule, location) in cases.items():
             with self.subTest(name):
@@ -286,13 +296,14 @@ class StructureTest(unittest.TestCase):
             "underlined after an indented line": "  Ethics Checklist Status\n---",
             "underlined over two lines": "Ethics\n  Checklist Status\n---",
             "underlined after a numbered line": "Ethics Checklist Status\n2) x\n---",
+            "underlined after a line with only markers": "Note\n2. >\n---",
             "sub-heading": "### Notes",
         }
         for name, heading in in_ethics.items():
             with self.subTest(name):
                 result = check(edit(EXAMPLE, "## TRACK Log\n", heading + "\n\n## TRACK Log\n"))
                 self.assertEqual(rules(result), [(checker.V8, "## Ethics Checklist Status")])
-                self.assertIn("heading other than the four section headings", result.problems[0].detail)
+                self.assertIn(checker.HEADINGS_ONLY, result.problems[0].detail)
         track = check(edit(EXAMPLE, "## COLLECT Readiness\n", "## TRACK Log ##\n\n## COLLECT Readiness\n"))
         self.assertEqual(rules(track), [(checker.V9, "## TRACK Log")])
         elsewhere = {
@@ -301,24 +312,32 @@ class StructureTest(unittest.TestCase):
             "heading in a list item": ("**Design.**", "- Design\n\n    ## Ethics Checklist Status\n\n**Design.**"),
             "underlined after an indented line": ("**Design.**", "  Ethics Checklist Status\n---\n\n**Design.**"),
             "underlined over two lines": ("**Design.**", "Ethics\n    Checklist Status\n---\n\n**Design.**"),
+            "heading in a nested list item": ("**Design.**", "- Outer\n    - ## Ethics Checklist Status\n\n**Design.**"),
+            "underlined after a digit from another script": ("**Design.**",
+                                                             chr(0x661) + ". Ethics Checklist Status\n---\n\n**Design.**"),
+            # The checker does not work out lists and quotes, so a line of - or = right under any text counts,
+            # even where a reader sees a rule that ends a list or quote.
+            "underlined after a list item": ("**Design.**", "- item\n---\n\n**Design.**"),
+            "underlined after a quote": ("**Design.**", "> quoted\n---\n\n**Design.**"),
+            "underlined after an indented quote marker": ("**Design.**",
+                                                          "Ethics Checklist Status\n    >\n---\n\n**Design.**"),
+            "heading in a footnote": ("**Design.**", "See the note.[^n]\n\n[^n]: ## Ethics Checklist Status\n\n**Design.**"),
         }
         for name, (old, new) in elsewhere.items():
             with self.subTest(name):
                 result = check(edit(EXAMPLE, old, new))
                 self.assertEqual(rules(result), [(checker.V7, "body")])
-                self.assertIn("heading other than the four section headings", result.problems[0].detail)
+                self.assertIn(checker.HEADINGS_ONLY, result.problems[0].detail)
 
     def test_lines_that_only_look_like_headings_are_text(self):
         # A reader sees no heading in these, so the checker must not report one.
         lines = {
             "hashtag": "#pilot",
+            "hashtag in a nested list item": "- Outer\n    - #pilot",
             "escaped": "\\# not a heading",
-            "rule after a list": "- item\n---",
-            "rule after a quote": "> quoted\n---",
-            "rule after a list item's second line": "- item\n  continued\n---",
-            "rule after a quote's unmarked second line": "> quoted\ncontinued\n---",
-            "rule after indented code": "    code\n---",
+            "rule after a blank line": "Some text\n\n---",
             "spaced rule after text": "Some text\n- - -",
+            "footnote": "See the note.[^n]\n\n[^n]: A source.",
         }
         for name, line in lines.items():
             with self.subTest(name):
@@ -332,6 +351,8 @@ class StructureTest(unittest.TestCase):
             "indented with a tab": "\t```\n\tSUS-10; NASA-TLX\n\t```",
             "in a list item": "- Instruments:\n  ```\n  SUS-10; NASA-TLX\n  ```",
             "in a quote": "> ```\n> SUS-10; NASA-TLX\n> ```",
+            "in a nested list item": "- Instruments:\n    - ```\n      SUS-10; NASA-TLX",
+            "in a footnote": "See the note.[^n]\n\n[^n]: ```",
         }
         for name, block in cases.items():
             with self.subTest(name):
@@ -357,10 +378,13 @@ class StructureTest(unittest.TestCase):
         self.assertEqual(rules(extra_fence), [(checker.V8, "## Ethics Checklist Status")])
         indented_code = check(edit(EXAMPLE, "```yaml\nevents:", "    events: []\n\n```yaml\nevents:"))
         self.assertEqual(rules(indented_code), [(checker.V9, "## TRACK Log")])
-        for prefix in (">     ", "-     "):  # indented code inside a quote or a list item
-            with self.subTest(prefix):
+        # Indented code inside a quote or a list item; a tab after the marker reaches the next multiple of 4.
+        for prefix in (">     ", "-     ", ">" + chr(9) + "  ", "-" + chr(9) + "  "):
+            with self.subTest(repr(prefix)):
                 inside = check(edit(EXAMPLE, "```yaml\nevents:", prefix + "events: []\n\n```yaml\nevents:"))
                 self.assertEqual(rules(inside), [(checker.V9, "## TRACK Log")])
+        quoted = check(edit(EXAMPLE, "```yaml\nevents:", ">" + chr(9) + "note\n\n```yaml\nevents:"))
+        self.assertEqual(quoted.problems, [])
 
     def test_closing_fence_follows_markdown_rules(self):
         # A reader keeps the block open after these lines, so the checker must too.
@@ -473,7 +497,7 @@ class BlockTest(unittest.TestCase):
     def test_block_timestamps_need_an_offset(self):
         text = edit(EXAMPLE, "answered_at: 2026-04-12T14:30:00+08:00", "answered_at: 2026-04-12T14:30:00")
         text = edit(text, "  - ts: 2026-04-15T09:00:00+08:00", "  - ts: 2026-04-15T09:00:00")
-        text = edit(text, 'note: "Survey only, no physical procedures"', 'note: "2026-04-05 10:50"')
+        text = edit(text, NOTE, 'note: "2026-04-05 10:50"')
         text = edit(text, "status_changed_at: 2026-04-12T14:00:00+08:00", "status_changed_at: 2026-04-12T14:00:00")
         self.assertEqual(rules(check(text)), [
             (checker.V10, "ethics.items[1.1].answered_at"),
@@ -528,13 +552,12 @@ class BlockTest(unittest.TestCase):
 
     def test_tagged_values_are_malformed(self):
         # A tagged value would skip the checks that expect text, such as the timezone rule, or fail outside YAML.
-        note = 'note: "Survey only, no physical procedures"'
         cases = {
             "timestamp": ("timeline:\n", "tagged: !!timestamp 2026-04-15T09:00:00\ntimeline:\n", checker.V2, "frontmatter"),
-            "float": (note, "note: !!float 1.5", checker.V8, "## Ethics Checklist Status"),
-            "int that is not a number": (note, "note: !!int abc", checker.V8, "## Ethics Checklist Status"),
-            "bool that is not true or false": (note, "note: !!bool maybe", checker.V8, "## Ethics Checklist Status"),
-            "local tag": (note, "note: !private x", checker.V8, "## Ethics Checklist Status"),
+            "float": (NOTE, "note: !!float 1.5", checker.V8, "## Ethics Checklist Status"),
+            "int that is not a number": (NOTE, "note: !!int abc", checker.V8, "## Ethics Checklist Status"),
+            "bool that is not true or false": (NOTE, "note: !!bool maybe", checker.V8, "## Ethics Checklist Status"),
+            "local tag": (NOTE, "note: !private x", checker.V8, "## Ethics Checklist Status"),
             "set": ("```yaml\nevents:\n", "```yaml\ntags: !!set {a, b}\nevents:\n", checker.V9, "## TRACK Log"),
         }
         for name, (old, new, rule, location) in cases.items():
@@ -545,12 +568,11 @@ class BlockTest(unittest.TestCase):
 
     def test_numbers_too_long_to_read_are_malformed(self):
         # Python refuses to read or print an integer of more than 4300 digits, which made the checker exit 2.
-        note = 'note: "Survey only, no physical procedures"'
         cases = {
             "frontmatter": ("current_phase: TRACK", "current_phase: TRACK\nextra: " + "7" * 5000,
                             checker.V2, "frontmatter"),
             "base-60 revision": ("revision: 23", "revision: 1" + ":59" * 3000, checker.V2, "frontmatter"),
-            "item": (note, "note: " + "7" * 5000, checker.V8, "## Ethics Checklist Status"),
+            "item": (NOTE, "note: " + "7" * 5000, checker.V8, "## Ethics Checklist Status"),
         }
         for name, (old, new, rule, location) in cases.items():
             with self.subTest(name):
@@ -561,18 +583,55 @@ class BlockTest(unittest.TestCase):
     def test_deep_nesting_is_malformed(self):
         # Nesting of a few hundred levels ran out of Python's stack, which made the checker exit 2.
         deep = "[" * 500 + "]" * 500
-        note = 'note: "Survey only, no physical procedures"'
+        chain = "\n".join(["a0: &a0 [x]"] + [f"a{level}: &a{level} [*a{level - 1}]" for level in range(1, 150)])
         cases = {
             "frontmatter": ("current_phase: TRACK", "current_phase: TRACK\nextra: " + deep,
                             checker.V2, "frontmatter"),
-            "item": (note, "note: " + deep, checker.V8, "## Ethics Checklist Status"),
+            "item": (NOTE, "note: " + deep, checker.V8, "## Ethics Checklist Status"),
             "TRACK Log": ("```yaml\nevents:\n", f"```yaml\nshape: {deep}\nevents:\n", checker.V9, "## TRACK Log"),
+            # Each alias adds a level without nesting in the text.
+            "aliases in the frontmatter": ("current_phase: TRACK", "current_phase: TRACK\n" + chain, checker.V2,
+                                           "frontmatter"),
+            "aliases in Ethics": ("```yaml\nitems:\n", "```yaml\n" + chain + "\nitems:\n", checker.V8,
+                                  "## Ethics Checklist Status"),
         }
         for name, (old, new, rule, location) in cases.items():
             with self.subTest(name):
                 result = check(edit(EXAMPLE, old, new))
                 self.assertEqual(rules(result), [(rule, location)])
-                self.assertIn("nested more than", result.problems[0].detail)
+                self.assertIn(checker.TOO_DEEP, result.problems[0].detail)
+
+    def test_numbers_that_do_not_convert_are_malformed(self):
+        # YAML reads these as numbers, and converting them failed outside YAML's errors, so the checker exited 2.
+        cases = {
+            "frontmatter": ("current_phase: TRACK", "current_phase: TRACK\nextra: 0b_", checker.V2, "frontmatter"),
+            "item": (NOTE, "note: 0x_", checker.V8,
+                     "## Ethics Checklist Status"),
+            "TRACK Log": ("```yaml\nevents:\n", "```yaml\nshape: -0b_\nevents:\n", checker.V9, "## TRACK Log"),
+        }
+        for name, (old, new, rule, location) in cases.items():
+            with self.subTest(name):
+                result = check(edit(EXAMPLE, old, new))
+                self.assertEqual(rules(result), [(rule, location)])
+                self.assertIn("malformed number", result.problems[0].detail)
+
+    def test_line_separators_in_yaml_are_malformed(self):
+        # YAML ends a line at these characters and a Markdown reader does not, so the two would read different lines.
+        for code in (0x85, 0x2028, 0x2029):
+            cases = {
+                "frontmatter": ("current_phase: TRACK", "current_phase: TRACK" + chr(code) + "extra: x",
+                                checker.V2, "frontmatter"),
+                "item": (NOTE,
+                         'note: "Survey only,' + chr(code) + ' no physical procedures"',
+                         checker.V8, "## Ethics Checklist Status"),
+                "TRACK Log": ("```yaml\nevents:\n", "```yaml\nshape: a" + chr(code) + "b\nevents:\n",
+                              checker.V9, "## TRACK Log"),
+            }
+            for name, (old, new, rule, location) in cases.items():
+                with self.subTest(name, code=hex(code)):
+                    result = check(edit(EXAMPLE, old, new))
+                    self.assertEqual(rules(result), [(rule, location)])
+                    self.assertIn("U+%04X" % code, result.problems[0].detail)
 
     def test_complex_keys_fail_in_the_loader(self):
         complex_key = check(edit(EXAMPLE, "```yaml\nevents:\n", "```yaml\n? [a, b]\n: x\nevents:\n"))
