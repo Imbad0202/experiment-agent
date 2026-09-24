@@ -173,11 +173,23 @@ class StructureTest(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(check(text).problems, [])
 
-    def test_line_endings_and_byte_order_mark(self):
-        for name, text in (("CRLF", EXAMPLE.replace("\n", "\r\n")), ("CR", EXAMPLE.replace("\n", "\r")),
-                           ("BOM", "\ufeff" + EXAMPLE)):
+    def test_line_endings(self):
+        for name, text in (("CRLF", EXAMPLE.replace("\n", "\r\n")), ("CR", EXAMPLE.replace("\n", "\r"))):
             with self.subTest(name):
                 self.assertEqual(check(text).problems, [])
+
+    def test_byte_order_mark_is_malformed(self):
+        # markdown-it's front-matter plugins do not skip a byte order mark, so they show the whole frontmatter as
+        # body text, where a YAML string could hold a decoy checklist and "<!--" that hides the real sections.
+        blocking = set_status(ETHICS_BLOCK, "2.2", "NEEDS_ACTION")
+        decoy = "notes: |\n" + "\n".join("  " + line if line else "" for line in
+                                          ["## Ethics Checklist Status", "", *blocking.split("\n"), "", "<!--"]) + "\n"
+        for name, text in (("plain", "\ufeff" + EXAMPLE),
+                           ("decoy", "\ufeff" + EXAMPLE.replace("schema_version: 1\n", "schema_version: 1\n" + decoy, 1))):
+            with self.subTest(name):
+                result = check(text)
+                self.assertEqual(rules(result), [(checker.V1, "frontmatter")])
+                self.assertIn("byte order mark", result.problems[0].detail)
 
     def test_frontmatter_delimiters(self):
         self.assertEqual(rules(check(EXAMPLE[len("---\n"):])), [(checker.V1, "frontmatter")])
@@ -815,9 +827,8 @@ class DerivationTest(unittest.TestCase):
     def test_shipped_example_is_ready(self):
         self.assertEqual(status(EXAMPLE), ("READY", ["none"]))
 
-    def test_line_endings_and_byte_order_mark_do_not_change_the_result(self):
-        for name, text in (("CRLF", EXAMPLE.replace("\n", "\r\n")), ("CR", EXAMPLE.replace("\n", "\r")),
-                           ("BOM", "\ufeff" + EXAMPLE)):
+    def test_line_endings_do_not_change_the_result(self):
+        for name, text in (("CRLF", EXAMPLE.replace("\n", "\r\n")), ("CR", EXAMPLE.replace("\n", "\r"))):
             with self.subTest(name):
                 self.assertEqual(status(text), ("READY", ["none"]))
 

@@ -355,14 +355,18 @@ def parse_timestamp(value):
 
 
 def _numbered_lines(text):
-    """Split text into (line number, line) pairs at CRLF, CR or LF, as Markdown does; drops a leading BOM."""
-    return list(enumerate(LINE_END_RE.split(text.removeprefix("\ufeff")), start=1))
+    """Split text into (line number, line) pairs at CRLF, CR or LF, as Markdown does."""
+    return list(enumerate(LINE_END_RE.split(text), start=1))
 
 
 def split_frontmatter(lines):
-    """Return ((frontmatter lines, body lines), None), or (None, the problem) when a delimiter is missing
-    or a line before the closing one could end the frontmatter for some reader, as "---" with whitespace
-    after it does."""
+    """Return ((frontmatter lines, body lines), None), or (None, the problem) when a delimiter is missing,
+    a byte order mark comes before it, or a line before the closing one could end the frontmatter for some
+    reader, as "---" with whitespace after it does."""
+    if lines and lines[0][1].startswith("\ufeff"):
+        # markdown-it's front-matter plugins do not skip it, and then show the whole frontmatter as text.
+        return None, ("the file starts with a byte order mark (U+FEFF), which some readers do not skip "
+                      "before the frontmatter; save the file as UTF-8 without it")
     missing = ("the file must start with a line that is exactly '---' and close the frontmatter with another "
                "such line")
     if not lines or lines[0][1] != "---":

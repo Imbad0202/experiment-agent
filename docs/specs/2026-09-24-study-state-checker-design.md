@@ -113,15 +113,17 @@ layout a reader might read either way is malformed.
   ASCII digits and `.` or `)`) with a space or tab and text after it; and
   a footnote label such as `[^1]:`, which GitHub reads as the start of a
   footnote that holds blocks.
-- **Frontmatter**: the first line (after an optional UTF-8 byte order mark)
-  must be exactly `---`, and the frontmatter ends at the next line that is
-  exactly `---`. No line before that one may be a line that some reader
-  takes as the end of frontmatter: a line starting with `---` (VS Code's
-  preview and Jekyll take one with spaces after it, gray-matter one with
-  anything after it), three or more `-` alone after at most three spaces
-  (markdown-it-front-matter), or `...` alone however indented (Jekyll,
-  markdown-it-front-matter). Inside a YAML string such a line is text to
-  the checker, while such a reader shows what follows it as the body.
+- **Frontmatter**: the first line must be exactly `---`, with no UTF-8
+  byte order mark before it: markdown-it-front-matter does not skip one
+  and then shows the whole frontmatter as body text. The frontmatter ends
+  at the next line that is exactly `---`. No line before that one may be
+  a line that some reader takes as the end of frontmatter: a line starting
+  with `---` (VS Code's preview and Jekyll take one with spaces after it,
+  gray-matter one with anything after it), three or more `-` alone after
+  at most three spaces (markdown-it-front-matter), or `...` alone however
+  indented (Jekyll, markdown-it-front-matter). Inside a YAML string such a
+  line is text to the checker, while such a reader shows what follows it
+  as the body.
 - **Code fences**: a line of up to three spaces, then three or more
   backticks or tildes, opens a fenced code block; a backtick fence's info
   string cannot contain a backtick. The block closes at the first later
@@ -226,7 +228,7 @@ lists and parentheses, so the agent can tell the user which rule failed.
 
 | # | Rule | Precise definition |
 |---|---|---|
-| V1 | Missing frontmatter delimiters | No `---` first line, or no closing `---` line; the first line has whitespace after `---`; or a line before the closing one starts with `---`, or holds only three or more `-` after at most three spaces, or only `...` |
+| V1 | Missing frontmatter delimiters | No `---` first line, or no closing `---` line; the file starts with a byte order mark; the first line has whitespace after `---`; or a line before the closing one starts with `---`, or holds only three or more `-` after at most three spaces, or only `...` |
 | V2 | Frontmatter is not parseable YAML | Parse error, or the result is not a mapping |
 | V3 | Required frontmatter field missing | `schema_version`, `study_id`, `created`, `updated`, `revision`, or `current_phase` is absent, null, or an empty string |
 | V4 | `schema_version` is not a known version | Not the integer `1` |
@@ -477,6 +479,7 @@ follow the shipped files. Tests run on Python 3.9 and on a current Python 3.
 | A line nested 16 or more columns deep: 50 list markers on one line and text, also below a decoy checklist; 10 list markers and `>` with no text, also 50 below a decoy checklist; 8 list markers; twelve list items nested one per line, also empty; five nested one per line, then five markers on one line; text after 7 list markers or 15 quote markers; 15 quote markers alone; a quote marker and 20 spaces | INVALID, V7 at `body`; VALID |
 | A line starting `$$` below a decoy checklist, also `$$ x $$ y`, `$$n = 100$$`, after `- ` or `> `, or indented three spaces; `$$` later in a line, and `$x$` | INVALID, V7 at `body`; VALID |
 | CR line endings | Same result as LF |
+| A byte order mark before the frontmatter, also with a decoy checklist and `<!--` in a block scalar | INVALID, V1 |
 | A merge key; a tag such as `!!timestamp` or `!!int abc` | INVALID, parse error |
 | An integer of 5,000 digits, also in base 60; values nested 500 levels deep, or 150 levels through aliases | INVALID, parse error |
 | `0b_`, `0x_` or `-0b_` as a value, in the frontmatter or a checked block | INVALID, parse error |
@@ -533,7 +536,8 @@ recruitment must stop.
 - A body line starting with `$$`, such as a formula on a line of its own,
   is INVALID even when it closes on the same line. `$...$` inside a line
   is text. A frontmatter string with a line that starts with `---`, or
-  holds only `-` or `...`, is INVALID too. The agent writes neither.
+  holds only `-` or `...`, is INVALID too, and so is a file saved with a
+  byte order mark. The agent writes none of these.
 - The checker reads the file as GitHub's file view and VS Code's preview
   do, with the frontmatter as frontmatter. A viewer that does not recognise
   frontmatter (plain cmark, markdown-it without its front-matter plugin, a
@@ -586,3 +590,4 @@ recruitment must stop.
 | 2026-09-25 | A line with only container markers counts up to the end of its markers | The seventh review round found that a line of fifty list markers and `>`, with no text after them, was skipped as blank, so markdown-it hid the sections below it while the checker reported READY. Only a line of spaces and tabs is blank |
 | 2026-09-25 | A frontmatter line that some reader takes as the end of frontmatter is malformed | The seventh review round found that markdown-it-front-matter ends frontmatter at `---` indented up to three spaces and at `...` however indented, which a YAML block scalar can hold. A decoy checklist and `<!--` after such a line showed that reader a blocking checklist and hid the real body, while the checker read the real frontmatter and reported READY. The rule covers the ends that VS Code's preview (from its 1.132 source), Jekyll, gray-matter and markdown-it-front-matter take |
 | 2026-09-25 | A body line starting `$$` is malformed | The security review of round 7 noted VS Code's math blocks as a possible reader difference; VS Code's 1.132 source shows that its preview, with math on by default, reads a line starting `$$` as a math block that runs to a line with `$$` in it or to the end of the file. The agent writes no math; applies the strict-layout choice |
+| 2026-09-25 | A byte order mark at the start of the file is malformed, reversing "after an optional byte order mark" | The eighth review round found that markdown-it-front-matter does not skip a byte order mark, so it shows the whole frontmatter as body text: a decoy checklist and `<!--` in a YAML string showed a blocking checklist and hid the real sections, while the checker, which dropped the mark, reported READY. The agent writes no byte order mark |
