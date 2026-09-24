@@ -193,6 +193,30 @@ class StructureTest(unittest.TestCase):
                 for text in (opening, inside, closing):
                     self.assertEqual(rules(check(text)), [(checker.V1, "frontmatter")])
 
+    def test_frontmatter_lines_a_reader_could_take_as_its_end_are_malformed(self):
+        # markdown-it-front-matter ends the frontmatter at a line of three or more "-" indented up to three spaces,
+        # or at "..." however indented; Jekyll at "..." with spaces after it; gray-matter at any line starting "---".
+        # Inside a YAML string such a line is text to the checker, so a reader could show what follows as the body.
+        blocking = set_status(ETHICS_BLOCK, "2.2", "NEEDS_ACTION")
+        decoy = "notes: |\n  ---\n  ## Ethics Checklist Status\n\n" + "\n".join(
+            "  " + line if line else "" for line in blocking.split("\n")) + "\n  <!--\n"
+        text = EXAMPLE.replace("schema_version: 1\n", "schema_version: 1\n" + decoy, 1) + "-->\n"
+        result = check(text)
+        self.assertEqual(rules(result), [(checker.V1, "frontmatter")])
+        self.assertIn("line 4 ", result.problems[0].detail)
+        ends = {"indented dots": "notes: |\n  text\n    ...\n  more", "longer": "notes: |\n  text\n   ----\n  more",
+                "space after": "notes: |\n  text\n  --- \n  more", "at the first column": 'notes: "text\n----\n  more"',
+                "text after": 'notes: "text\n---x\n  more"'}
+        for name, lines in ends.items():
+            with self.subTest(name):
+                result = check(EXAMPLE.replace("schema_version: 1\n", "schema_version: 1\n" + lines + "\n", 1))
+                self.assertEqual(rules(result), [(checker.V1, "frontmatter")])
+        # Indented four spaces, a line of "-" is code to markdown-it and does not start the line for the others.
+        for lines in ("notes: |\n    text\n    ---\n    more", "notes: |\n  ...and more"):
+            with self.subTest(lines):
+                self.assertEqual(check(EXAMPLE.replace("schema_version: 1\n", "schema_version: 1\n" + lines + "\n",
+                                                       1)).problems, [])
+
     def test_frontmatter_must_parse_as_a_mapping(self):
         result = check(edit(EXAMPLE, "revision: 23", "revision: [23"))
         self.assertEqual(rules(result), [(checker.V2, "frontmatter")])
@@ -458,6 +482,9 @@ class StructureTest(unittest.TestCase):
             "an item per line, then five on one": "\n".join("  " * level + "- item" for level in range(5))
             + "\n" + "  " * 5 + "- " * 5 + "x",
             "after a decoy": "**Ethics Checklist Status**\n\n" + blocking + "\n" + "- " * 50 + "x",
+            # A line with only markers opens the lists too, however deep.
+            "only markers": "- " * 10 + ">",
+            "only markers, after a decoy": "**Ethics Checklist Status**\n\n" + blocking + "\n" + "- " * 50 + ">",
             "text at column 16": "- " * 8 + "x",
         }
         for name, lines in cases.items():
@@ -465,9 +492,23 @@ class StructureTest(unittest.TestCase):
                 result = check(edit(EXAMPLE, "**Design.**", lines + "\n\n**Design.**"))
                 self.assertEqual(rules(result), [(checker.V7, "body")])
                 self.assertIn("columns", result.problems[0].detail)
-        for shallow in ("- " * 7 + "x", ">" * 15 + "x"):
+        for shallow in ("- " * 7 + "x", ">" * 15 + "x", ">" * 15, ">" + " " * 20):
             with self.subTest(shallow=shallow):
                 self.assertEqual(check(edit(EXAMPLE, "**Design.**", shallow + "\n\n**Design.**")).problems, [])
+
+    def test_math_blocks_are_malformed(self):
+        # VS Code's preview reads a line starting "$$" as a math block that takes the lines below it up to one with
+        # "$$" in it, or to the end of the file, so the sections below a decoy would no longer show as sections.
+        blocking = set_status(ETHICS_BLOCK, "2.2", "NEEDS_ACTION")
+        for line in ("$$", "$$ x $$ y", "- $$", "> $$", "   $$", "$$n = 100$$"):
+            with self.subTest(line):
+                decoy = "**Ethics Checklist Status**\n\n" + blocking + "\n" + line
+                result = check(edit(EXAMPLE, "**Design.**", decoy + "\n\n**Design.**"))
+                self.assertEqual(rules(result), [(checker.V7, "body")])
+                self.assertIn("math block", result.problems[0].detail)
+        for line in ("Costs $5, then $$ more", "Mean $x$ over groups"):
+            with self.subTest(line):
+                self.assertEqual(check(edit(EXAMPLE, "**Design.**", line + "\n\n**Design.**")).problems, [])
 
     def test_long_lines_are_read_in_linear_time(self):
         nbsp, bom = chr(0xA0), chr(0xFEFF)

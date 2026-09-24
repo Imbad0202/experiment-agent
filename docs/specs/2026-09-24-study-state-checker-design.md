@@ -115,8 +115,13 @@ layout a reader might read either way is malformed.
   footnote that holds blocks.
 - **Frontmatter**: the first line (after an optional UTF-8 byte order mark)
   must be exactly `---`, and the frontmatter ends at the next line that is
-  `---`. That line must also be exactly `---`: readers differ on whether
-  `---` followed by spaces or tabs opens or ends frontmatter.
+  exactly `---`. No line before that one may be a line that some reader
+  takes as the end of frontmatter: a line starting with `---` (VS Code's
+  preview and Jekyll take one with spaces after it, gray-matter one with
+  anything after it), three or more `-` alone after at most three spaces
+  (markdown-it-front-matter), or `...` alone however indented (Jekyll,
+  markdown-it-front-matter). Inside a YAML string such a line is text to
+  the checker, while such a reader shows what follows it as the body.
 - **Code fences**: a line of up to three spaces, then three or more
   backticks or tildes, opens a fenced code block; a backtick fence's info
   string cannot contain a backtick. The block closes at the first later
@@ -168,16 +173,22 @@ layout a reader might read either way is malformed.
   rule; a blank line above a rule keeps it a rule. A section name written
   another way (with a link, look-alike letters, indented, or inside a
   list, quote or footnote) is caught without comparing names.
-- **Deep text**: outside fenced code blocks, a line whose text starts 16
-  or more columns in, once container markers are removed at any depth, is
-  malformed anywhere in the body; a tab reaches the next multiple of four
-  columns. markdown-it shows nothing below a list nested past its limit
-  (ten lists with its CommonMark preset, fifty with its default one), and
-  each list moves its text at least two columns, so no list gets within
-  two levels of the lower limit. A deep quote does not hide what follows
-  it, but its markers count the same way. Only container markers are
-  counted, so an extension that nests without them (a definition list, a
-  `:::` container) is not covered.
+- **Deep lines**: outside fenced code blocks, a line whose container
+  markers and indentation, removed at any depth, take 16 or more columns
+  is malformed anywhere in the body. A line with only markers counts up to
+  the end of its markers, a blank line (only spaces or tabs) counts as
+  nothing, and a tab reaches the next multiple of four columns. markdown-it
+  shows nothing below a list nested past its limit (ten lists with its
+  CommonMark preset, fifty with its default one), and each list takes at
+  least two columns, so no list gets within two levels of the lower limit.
+  A deep quote does not hide what follows it, but its markers count the
+  same way. Only container markers are counted, so an extension that nests
+  without them (a definition list, a `:::` container) is not covered.
+- **Math blocks**: a line that starts with `$$` once container markers
+  and indentation are removed is malformed anywhere in the body. VS Code's
+  preview, with the math support it turns on by default, reads it as a
+  math block that takes the lines below it up to one with `$$` in it, or
+  to the end of its list item, quote or file, section headings included.
 - **Repeated keys**: a key that appears twice in one YAML mapping is a parse
   error (V2 in the frontmatter, V8 or V9 in a block). YAML does not allow
   it, and keeping either value could hide a blocking answer.
@@ -215,15 +226,15 @@ lists and parentheses, so the agent can tell the user which rule failed.
 
 | # | Rule | Precise definition |
 |---|---|---|
-| V1 | Missing frontmatter delimiters | No `---` first line, or no closing `---` line; or either one has whitespace after `---` |
+| V1 | Missing frontmatter delimiters | No `---` first line, or no closing `---` line; the first line has whitespace after `---`; or a line before the closing one starts with `---`, or holds only three or more `-` after at most three spaces, or only `...` |
 | V2 | Frontmatter is not parseable YAML | Parse error, or the result is not a mapping |
 | V3 | Required frontmatter field missing | `schema_version`, `study_id`, `created`, `updated`, `revision`, or `current_phase` is absent, null, or an empty string |
 | V4 | `schema_version` is not a known version | Not the integer `1` |
 | V5 | `current_phase` is not in {PLAN, ETHICS, TRACK, COLLECT} | As stated |
 | V6 | `revision` is not a positive integer | Not an integer ≥ 1; `true` and `false` rejected |
-| V7 | Required body section heading missing | No `## Protocol Summary`, `## Ethics Checklist Status`, or `## TRACK Log` section. Section order and `## COLLECT Readiness` are not checked; the rule names only these three. When the heading is present but inside a fenced code block, the detail gives both line numbers. Also, outside the checked sections, HTML, a heading other than the four section headings, a code fence not at the first column or of more than 255 backticks or tildes, or text 16 or more columns in, each reported at `body` with its line, because each can hide a section or pass for one |
-| V8 | Ethics Checklist Status YAML block is malformed | The section appears more than once, counting a `## Ethics Checklist Status` line inside a code fence; it has HTML, a heading other than the four section headings, a code fence not at the first column or of more than 255 backticks or tildes, or text 16 or more columns in; a code fence in it is still open at the end of the file; it has no yaml block or more than one; it has other code (a fenced block that is not yaml, or a line indented four or more columns, also after block quote or list markers); parse error or not a mapping; `items` missing or not a list (an empty list is fine); an item not a mapping or lacking `id` or `status`; `id` not in the roster (`5.1` reported as belonging in the `irb` block); a repeated `id`; `status` not in {PASS, NEEDS_ACTION, NOT_APPLICABLE}; `irb` missing or not a mapping; `irb.required` not `true` or `false`; `irb.status` not in {NOT_YET_SUBMITTED, SUBMITTED, APPROVED, EXEMPT} |
-| V9 | TRACK Log YAML block is malformed | The section appears more than once, counting a `## TRACK Log` line inside a code fence; it has HTML, a heading other than the four section headings, a code fence not at the first column or of more than 255 backticks or tildes, or text 16 or more columns in; a code fence in it is still open at the end of the file; it has no yaml block or more than one; it has other code, as for V8; parse error or not a mapping; `events` missing or not a list (an empty list is fine); an event not a mapping or lacking `ts` or `kind`; `kind` not in {count_update, timeline_change, quality_issue, agent_flag, user_note} |
+| V7 | Required body section heading missing | No `## Protocol Summary`, `## Ethics Checklist Status`, or `## TRACK Log` section. Section order and `## COLLECT Readiness` are not checked; the rule names only these three. When the heading is present but inside a fenced code block, the detail gives both line numbers. Also, outside the checked sections, HTML, a heading other than the four section headings, a code fence not at the first column or of more than 255 backticks or tildes, a line nested 16 or more columns deep, or a line starting `$$`, each reported at `body` with its line, because each can hide a section or pass for one |
+| V8 | Ethics Checklist Status YAML block is malformed | The section appears more than once, counting a `## Ethics Checklist Status` line inside a code fence; it has HTML, a heading other than the four section headings, a code fence not at the first column or of more than 255 backticks or tildes, a line nested 16 or more columns deep, or a line starting `$$`; a code fence in it is still open at the end of the file; it has no yaml block or more than one; it has other code (a fenced block that is not yaml, or a line indented four or more columns, also after block quote or list markers); parse error or not a mapping; `items` missing or not a list (an empty list is fine); an item not a mapping or lacking `id` or `status`; `id` not in the roster (`5.1` reported as belonging in the `irb` block); a repeated `id`; `status` not in {PASS, NEEDS_ACTION, NOT_APPLICABLE}; `irb` missing or not a mapping; `irb.required` not `true` or `false`; `irb.status` not in {NOT_YET_SUBMITTED, SUBMITTED, APPROVED, EXEMPT} |
+| V9 | TRACK Log YAML block is malformed | The section appears more than once, counting a `## TRACK Log` line inside a code fence; it has HTML, a heading other than the four section headings, a code fence not at the first column or of more than 255 backticks or tildes, a line nested 16 or more columns deep, or a line starting `$$`; a code fence in it is still open at the end of the file; it has no yaml block or more than one; it has other code, as for V8; parse error or not a mapping; `events` missing or not a list (an empty list is fine); an event not a mapping or lacking `ts` or `kind`; `kind` not in {count_update, timeline_change, quality_issue, agent_flag, user_note} |
 | V10 | Any timestamp is missing timezone | See below |
 
 A **timestamp** is `YYYY-MM-DDTHH:MM`, optionally followed by `:SS` and a
@@ -463,7 +474,8 @@ follow the shipped files. Tests run on Python 3.9 and on a current Python 3.
 | A code fence indented with spaces or a tab, in a list item, a nested list item, a quote or a footnote, in any section; a decoy after a code block in a list item | INVALID (V7 at `body`, or V8 or V9) |
 | A closing fence indented four spaces or a tab, or followed by an ideographic space | The block stays open |
 | An opening fence of 256 backticks or tildes, which GitHub ends at a line of 255, around a decoy checklist; a fence of 255 | INVALID, V7 at `body`; VALID |
-| Text 16 or more columns in: 50 list markers on one line, also below a decoy checklist; 8 list markers; twelve list items nested one per line, also empty; five nested one per line, then five markers on one line; text after 7 list markers or 15 quote markers | INVALID, V7 at `body`; VALID |
+| A line nested 16 or more columns deep: 50 list markers on one line and text, also below a decoy checklist; 10 list markers and `>` with no text, also 50 below a decoy checklist; 8 list markers; twelve list items nested one per line, also empty; five nested one per line, then five markers on one line; text after 7 list markers or 15 quote markers; 15 quote markers alone; a quote marker and 20 spaces | INVALID, V7 at `body`; VALID |
+| A line starting `$$` below a decoy checklist, also `$$ x $$ y`, `$$n = 100$$`, after `- ` or `> `, or indented three spaces; `$$` later in a line, and `$x$` | INVALID, V7 at `body`; VALID |
 | CR line endings | Same result as LF |
 | A merge key; a tag such as `!!timestamp` or `!!int abc` | INVALID, parse error |
 | An integer of 5,000 digits, also in base 60; values nested 500 levels deep, or 150 levels through aliases | INVALID, parse error |
@@ -475,6 +487,7 @@ follow the shipped files. Tests run on Python 3.9 and on a current Python 3.
 | A frontmatter key named `track_summary.last_event_ts` whose value has no offset | INVALID, V10 |
 | `=` as a key or a value | A string |
 | No frontmatter delimiter; a delimiter with a space, a tab, a no-break space or an ideographic space after `---` | INVALID, V1 |
+| In a frontmatter block scalar, `  ---` followed by a decoy checklist and `<!--`, with `-->` after the body (markdown-it-front-matter ends the frontmatter there); `    ...`, `   ----` or `  --- ` in a block scalar; `----` or `---x` at the first column of a quoted string; `    ---` in a block scalar, or `  ...and more` | INVALID, V1, naming the line; VALID |
 | `--now`, with and without PyYAML | Exit 0; one date-time with offset, within a minute of the test's clock |
 | Roster | 31 IDs from the ID map, `5.1` excluded |
 | ID map missing, or with a category 7 row | Exit 2 |
@@ -512,10 +525,15 @@ recruitment must stop.
   block tag name after `<` anywhere on a line, such as `x <p = .05`; and
   `<!` or `<?` anywhere. PERSIST step 3 already asks the agent for no `<`
   followed by a letter, `/`, `!` or `?` in the body.
-- Text 16 or more columns in is INVALID, also where a reader shows it,
-  such as a rule of nine or more spaced `-` or `*`, quotes nested sixteen
-  deep, or a line indented 16 or more columns outside a code fence. The
-  artifacts the agent wrote in the behavioural runs reach column 6 at most.
+- A line nested or indented 16 or more columns deep is INVALID, also where
+  a reader shows it, such as a rule of nine or more spaced `-` or `*`,
+  quotes nested sixteen deep, or a line indented 16 or more columns outside
+  a code fence. The artifacts the agent wrote in the behavioural runs reach
+  column 6 at most.
+- A body line starting with `$$`, such as a formula on a line of its own,
+  is INVALID even when it closes on the same line. `$...$` inside a line
+  is text. A frontmatter string with a line that starts with `---`, or
+  holds only `-` or `...`, is INVALID too. The agent writes neither.
 - The checker reads the file as GitHub's file view and VS Code's preview
   do, with the frontmatter as frontmatter. A viewer that does not recognise
   frontmatter (plain cmark, markdown-it without its front-matter plugin, a
@@ -564,4 +582,7 @@ recruitment must stop.
 | 2026-09-25 | A footnote label is a container marker; a line with only markers is not blank; a tab after a marker reaches the next multiple of four columns; whitespace in a tag is any Python whitespace | The review of the round-4 changes found a heading let through by a line with only `>` or `2. >` above its underline, a heading, HTML block or code fence inside a GitHub footnote, indented code after `>` and a tab in a checked section, and `<script` or `<details` followed by a vertical tab or a form feed, which readers take as HTML |
 | 2026-09-25 | Each line outside code is read alone for HTML: a tag, `<!`, `<?` or an HTML block start anywhere, a tag still open at the end of the line, or a `<` or `</` and a letter followed on the line by whitespace other than a space or a tab; YAML directives are parse errors, and a value Python cannot build is a scanner error with its line; fields already checked as timestamps are skipped by their keys | The fifth review round found a tag over two quoted lines and a U+00A0 in an unquoted value, both passing as VALID/READY; an escape past U+10FFFF made the checker exit 2; a frontmatter key with a dot in its name matched a checked field's path and skipped V10. The cleanup reviews of the first fixes found that its tag pattern took exponential time on runs of U+00A0, that joining lines missed a tag whose second quoted line starts `2.`, that readers following the current CommonMark text keep a vertical tab or a form feed inside an unquoted value, and that a long `%YAML` version number is slow on Python 3.9 and read differently by 3.9 and 3.11. Reading each line alone needs no model of lists and quotes, and taking only a space or a tab as a tag space gives each tag pattern one reading; the cost is that some lines where a reader sees no tag are INVALID (§ Compatibility and risk) |
 | 2026-09-25 | An opening code fence of more than 255 backticks or tildes is malformed | The sixth review round found that GitHub (cmark-gfm) keeps a fence's length in one byte and ends a longer fence at the first later line of 255 or more. A decoy between a fence of 256 and one of 255 showed GitHub a blocking checklist and hid the real sections as code, while the checker read on to the real block and reported READY |
-| 2026-09-25 | Text 16 or more columns in is malformed | The cleanup review of the round-6 fix found that markdown-it shows nothing below a list nested past its limit (ten lists with its CommonMark preset, fifty with its default one). A decoy checklist above such a list showed a markdown-it reader a blocking checklist and hid the real sections, while the checker read the real block and reported READY. Each list moves its text at least two columns, so counting columns needs no model of lists; the limit leaves two levels of margin. The cost is that some text a reader shows, such as quotes nested sixteen deep, is rejected |
+| 2026-09-25 | A line whose container markers and indentation take 16 or more columns is malformed | The cleanup review of the round-6 fix found that markdown-it shows nothing below a list nested past its limit (ten lists with its CommonMark preset, fifty with its default one). A decoy checklist above such a list showed a markdown-it reader a blocking checklist and hid the real sections, while the checker read the real block and reported READY. Each list takes at least two columns, so counting columns needs no model of lists; the limit leaves two levels of margin. The cost is that some text a reader shows, such as quotes nested sixteen deep, is rejected |
+| 2026-09-25 | A line with only container markers counts up to the end of its markers | The seventh review round found that a line of fifty list markers and `>`, with no text after them, was skipped as blank, so markdown-it hid the sections below it while the checker reported READY. Only a line of spaces and tabs is blank |
+| 2026-09-25 | A frontmatter line that some reader takes as the end of frontmatter is malformed | The seventh review round found that markdown-it-front-matter ends frontmatter at `---` indented up to three spaces and at `...` however indented, which a YAML block scalar can hold. A decoy checklist and `<!--` after such a line showed that reader a blocking checklist and hid the real body, while the checker read the real frontmatter and reported READY. The rule covers the ends that VS Code's preview (from its 1.132 source), Jekyll, gray-matter and markdown-it-front-matter take |
+| 2026-09-25 | A body line starting `$$` is malformed | The security review of round 7 noted VS Code's math blocks as a possible reader difference; VS Code's 1.132 source shows that its preview, with math on by default, reads a line starting `$$` as a math block that runs to a line with `$$` in it or to the end of the file. The agent writes no math; applies the strict-layout choice |

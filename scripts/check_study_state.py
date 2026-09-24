@@ -65,6 +65,10 @@ LINE_BREAK_RE = re.compile(r"[\x00-\x1f\x7f\x85\u2028\u2029]")
 # Markdown layout, read as CommonMark does wherever a difference could show a reader
 # something other than what the checker reads.
 LINE_END_RE = re.compile(r"\r\n|\r|\n")
+# A frontmatter line that some reader takes as the end of the frontmatter: one starting "---" (gray-matter),
+# three or more "-" alone after at most three spaces (markdown-it-front-matter), or "..." alone however
+# indented (markdown-it-front-matter, and Jekyll with spaces after it).
+FRONTMATTER_END_RE = re.compile(r"---.*| {0,3}-{3,}\s*|[ \t]*\.\.\.\s*")
 FENCE_RE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
 # A block quote marker, a footnote label (GitHub reads a footnote as a container), or a list marker
 # with text after it.
@@ -116,11 +120,16 @@ MAX_FENCE_LENGTH = 255
 LONG_FENCE = (f"line %d starts a code block with more than {MAX_FENCE_LENGTH} backticks or tildes, which "
               "readers end at different lines; start a code block with ```")
 # markdown-it shows nothing below a list nested past its limit: ten lists with its CommonMark settings, fifty
-# with its default ones. Each list moves its text at least two columns, so text this many columns in is
-# malformed, two lists short of the lower limit.
+# with its default ones. Each list takes at least two columns, so a line whose markers and indentation take
+# this many columns is malformed, two lists short of the lower limit.
 DEEP_COLUMN = 16
-DEEP_TEXT = (f"line %d starts its text {DEEP_COLUMN} or more columns in; some readers stop showing the rest "
-             "of a file at lists nested about that deep, so nest lists and quotes less deeply")
+DEEP_TEXT = (f"line %d has list, quote or footnote markers and indentation {DEEP_COLUMN} or more columns "
+             "wide; some readers stop showing the rest of a file at lists nested about that deep, so nest "
+             "lists and quotes less deeply")
+# VS Code's preview reads a line starting "$$" as a math block, which takes the lines below it up to one with
+# "$$" in it, or to the end of the file.
+MATH_BLOCK = ("line %d starts with '$$', which VS Code's preview reads as a math block that can take the "
+              "lines below it; study state artifacts do not use math blocks")
 
 
 class CannotRun(Exception):
@@ -147,7 +156,7 @@ class Section:
     yaml_blocks: list  # (first content line, text) of each yaml or yml block
     open_fence: int = None  # line of a code fence still open at the end of the file
     html: int = None  # first line with HTML
-    stray: str = None  # the first other heading, misplaced or overlong code fence, or text too deep
+    stray: str = None  # the first other heading, misplaced or overlong fence, deep line, or math block
     other_code: str = None  # where the first code other than a yaml block is
 
 
@@ -351,14 +360,21 @@ def _numbered_lines(text):
 
 
 def split_frontmatter(lines):
-    """Return (frontmatter lines, body lines), or None when a delimiter is missing or is "---" with
-    whitespace after it, which readers differ on."""
+    """Return ((frontmatter lines, body lines), None), or (None, the problem) when a delimiter is missing
+    or a line before the closing one could end the frontmatter for some reader, as "---" with whitespace
+    after it does."""
+    missing = ("the file must start with a line that is exactly '---' and close the frontmatter with another "
+               "such line")
     if not lines or lines[0][1] != "---":
-        return None
+        return None, missing
     for index in range(1, len(lines)):
-        if lines[index][1].rstrip() == "---":
-            return (lines[1:index], lines[index + 1:]) if lines[index][1] == "---" else None
-    return None
+        number, text = lines[index]
+        if text == "---":
+            return (lines[1:index], lines[index + 1:]), None
+        if FRONTMATTER_END_RE.fullmatch(text):
+            return None, (f"line {number} could end the frontmatter for some readers; before the closing "
+                          "'---', no line may start with '---' or hold only '-' characters or '...'")
+    return None, missing
 
 
 def _fence_opening(text):
@@ -404,8 +420,8 @@ def _has_html(text):
 def split_sections(body):
     """Read the body's layout: its sections, their yaml blocks, other code, and whatever could show a
     reader something other than what the checker reads (HTML, a heading other than the four section
-    headings, a code block not at the first column or with a fence over 255 characters, text 16 or more
-    columns in, a section heading inside a code block, an unclosed fence)."""
+    headings, a code block not at the first column or with a fence over 255 characters, a line nested 16
+    or more columns deep, a math block, a section heading inside a code block, an unclosed fence)."""
     sections, hidden = [Section(None, 0, [])], {}
     fence = fence_line = block = None
     after_text = False  # whether the line above is one that a line of - or = could underline
@@ -453,11 +469,16 @@ def split_sections(body):
         stripped = _strip_containers(expanded)
         if stripped.strip(" \t") and not misplaced and stripped.startswith("    "):
             section.other_code = section.other_code or f"line {number} is indented, which makes it code"
-        innermost = _strip_containers(expanded, ANY_CONTAINER_RE).lstrip(" ")
-        if innermost and len(expanded) - len(innermost) >= DEEP_COLUMN:
+        # The columns before the text, or up to the end of the markers on a line with only markers; a blank
+        # line opens nothing.
+        marked = expanded.rstrip(" ")
+        depth = len(marked) - len(_strip_containers(marked, ANY_CONTAINER_RE).lstrip(" "))
+        if marked and depth >= DEEP_COLUMN:
             section.stray = section.stray or DEEP_TEXT % number
         # A heading a reader could see. Lists and quotes are not worked out, so a line of - or = right under
         # any line that is not blank counts, even where a reader sees a rule that ends a list or quote.
+        if content.startswith("$$"):
+            section.stray = section.stray or MATH_BLOCK % number
         if ATX_RE.match(content):
             section.stray = section.stray or OTHER_HEADING % number
         elif after_text and UNDERLINE_RE.fullmatch(text.lstrip(" \t>")):
@@ -728,10 +749,9 @@ def derive(ethics, roster):
 def check_artifact(text, roster):
     """Validate artifact text; for a valid artifact also derive its ethics_status."""
     problems = []
-    split = split_frontmatter(_numbered_lines(text))
-    if split is None:
-        problems.append(Problem(V1, "frontmatter", "the file must start with a line that is exactly '---' "
-                                "and close the frontmatter with another such line"))
+    split, error = split_frontmatter(_numbered_lines(text))
+    if error:
+        problems.append(Problem(V1, "frontmatter", error))
         return Result(problems, None, None, None, [])
     frontmatter_lines, body = split
     frontmatter, error = _parse_yaml("\n".join(line for _, line in frontmatter_lines), 2,
@@ -751,8 +771,9 @@ def check_artifact(text, roster):
             problems.append(Problem(V7, f"## {name}", detail))
     for section in layout.sections:
         if section.heading not in CHECKED_SECTIONS:
-            # HTML, a misplaced or overlong code fence, or text too deep can hide a section, and another
-            # heading can pass for one; the checked sections report these under their own rule.
+            # HTML, a misplaced or overlong code fence, a line nested too deep, or a math block can hide a
+            # section, and another heading can pass for one; the checked sections report these under their own
+            # rule.
             if section.html:
                 problems.append(Problem(V7, "body", HTML_DETAIL % section.html))
             if section.stray:
