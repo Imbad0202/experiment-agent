@@ -116,8 +116,9 @@ Every ethics status you report or act on comes from a checker run on the
 artifact as it is on disk: the run in PERSIST step 5 of the same turn, or
 a fresh run. If `current_phase` is TRACK or COLLECT and the status is not
 `READY`, tell the user plainly that participant recruitment and data
-collection stop until it is `READY` again, and offer to resolve the items
-in `reasons`. Do not change `current_phase` on your own.
+collection stop, and that no data goes to analysis, until it is `READY`
+again, and offer to resolve the items in `reasons`. Do not change
+`current_phase` on your own.
 
 **If the checker cannot run** (exit 2, it does not finish, or you have no
 command tool): tell the user once per session, in plain language, what
@@ -249,7 +250,8 @@ and data collection.
 
 **IRB approval transition:** When the user reports the IRB has approved or
 exempted the protocol, record `irb.status: APPROVED` (or `EXEMPT` if
-exempted) with a fresh `status_changed_at`. **Reconfirmation triggers only
+exempted) with `status_changed_at` set to the time you record it, not the
+date on the approval letter. **Reconfirmation triggers only
 on APPROVED**, not on EXEMPT — exempt status means the IRB declined to
 review, so there is nothing to have been modified. For APPROVED transitions,
 see "IRB approval reconfirmation set" in `references/study_state_protocol.md`
@@ -258,8 +260,8 @@ for the canonical category-based list of items to re-confirm.
 **Do not auto-flip `irb.status`:** the agent MUST NOT mark IRB APPROVED
 based on a casual user remark like "IRB approved." Require an explicit
 status assertion + (if available) the approval reference number, and
-record `status_changed_at`. The strict-precedence derivation will surface
-the change correctly on the next `ethics_status` read.
+record `status_changed_at` as above. The strict-precedence derivation will
+surface the change correctly on the next `ethics_status` read.
 
 _State changes in this phase trigger PERSIST — see PERSIST sub-phase below._
 
@@ -297,7 +299,11 @@ When user reports collection is complete:
 
 **Output**: `study_status` in Markdown format (see SKILL.md Output Formats) + `data_readiness` section.
 
-If all checks PASS: "Data is ready for analysis. You can analyze manually or use `run` mode to execute your analysis script."
+If all checks PASS and the ethics status is `READY`: "Data is ready for analysis. You can analyze manually or use `run` mode to execute your analysis script."
+
+If all checks PASS but the ethics status is not `READY`: record that
+collection is complete; the data is not ready for analysis (see "Study
+state checker").
 
 If any FAIL: list blockers, suggest actions.
 
@@ -340,7 +346,14 @@ and validation rules are defined in `references/study_state_protocol.md`.
    `track_summary` (all structured fields: `last_event_ts`,
    `current_counts`, `open_flags`, `recent_changes`, `next_action`;
    `narrative` is optional but encouraged) to reflect the latest TRACK
-   state.
+   state. Keep the template's layout, which the checker requires:
+   - In the body, write no `<` directly followed by a letter, `/`, `!` or
+     `?`. The checker rejects HTML, and text such as `<to be decided>`
+     counts as HTML. Leave the template's own `<...>` placeholders as they
+     are until you replace them with plain text.
+   - Write each section heading exactly `## <name>`, once.
+   - In Ethics Checklist Status and TRACK Log, write only text and the one
+     yaml block, its ``` lines at the start of the line.
 4. **Write the file (best-effort overwrite).** Single Write tool call,
    replacing entire file contents. This is best-effort, not atomic.
    No partial writes, no in-place edits.

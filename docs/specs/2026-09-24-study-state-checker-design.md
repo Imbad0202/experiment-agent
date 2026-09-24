@@ -92,21 +92,52 @@ The checker makes no network calls and writes nothing. It reads two files:
 YAML is loaded with a `SafeLoader` subclass that resolves neither timestamps
 nor floats. Timestamps stay strings, so a missing offset stays detectable;
 item IDs stay exactly as written, so an unquoted `1.10` cannot collapse into
-`1.1`.
+`1.1`. A lone `=` stays a string too; YAML 1.1 gives it a type that PyYAML
+cannot build.
 
 ### Parsing
 
+The checker accepts only the layout the agent writes (the template's). It
+reads that layout the way a CommonMark reader such as GitHub does, and
+treats as malformed anything else that could show a reader something other
+than what the checker reads.
+
+- **Lines** end at CRLF, CR, or LF.
 - **Frontmatter**: the first line (after an optional UTF-8 byte order mark)
   must be `---`; the frontmatter ends at the next line that is exactly `---`.
-- **Sections**: in the body after the frontmatter, outside fenced code blocks
-  (```` ``` ```` or `~~~`), a line starting with `## ` starts a section named
-  by the rest of the line, trailing spaces removed.
-- **Section YAML**: the fenced block in the section whose info string is
-  `yaml` or `yml` (any case).
+- **Code fences**: a line of up to three spaces, then three or more
+  backticks or tildes, opens a fenced code block; a backtick fence's info
+  string cannot contain a backtick. The block closes at the first later
+  line of up to three spaces, the same character at least as many times,
+  and then only spaces or tabs. Otherwise it runs to the end of the file.
+- **Sections**: in the body after the frontmatter, outside fenced code
+  blocks, a line starting with `## ` starts a section named by the rest of
+  the line, trailing spaces removed.
+- **Section YAML**: a fenced block in the section whose info string's first
+  word is `yaml` or `yml` (any case).
+- **Checked sections**: Ethics Checklist Status and TRACK Log, the two whose
+  yaml blocks the checker reads. Each holds only text and its one yaml
+  block, whose opening fence starts at the first column.
+- **HTML**: outside fenced code blocks, a tag (`<name …>` or `</name>`, as
+  CommonMark defines one, even across lines), `<!--`, `<?`, `<!` followed by
+  a letter, `<![CDATA[`, or a line that opens an HTML block before its tag
+  is complete (such as `<div`), also after block quote or list markers.
+  A reader does not see HTML as written, and some of it hides what follows.
+- **Heading variants**: a heading a reader sees (`#` to `######`, also inside
+  a block quote or list, or text underlined with `=` or `-`) whose words
+  include a checked section's name, other than the line `## <name>` itself.
+  Words are compared after decoding character references, folding
+  compatibility forms such as full-width letters, and removing link
+  targets, emphasis marks, and every character that does not print on its
+  own (combining marks and format characters), ignoring case and spacing.
 - **Repeated keys**: a key that appears twice in one YAML mapping is a parse
   error (V2 in the frontmatter, V8 or V9 in a block). YAML does not allow
-  it, and keeping either value could hide a blocking answer. Keys that a
-  merge (`<<`) brings in count too.
+  it, and keeping either value could hide a blocking answer.
+- **Merge keys and tags**: a merge key (`<<`) or a tag (such as
+  `!!timestamp`, `!!int` or `!local`) is a parse error. A merge can bring in
+  a repeated key and can grow without limit; a tag builds a value that
+  skips the checks that expect text, or fails outside YAML's own errors.
+  The agent writes neither.
 
 ### Validation rules
 
@@ -124,9 +155,9 @@ lists and parentheses, so the agent can tell the user which rule failed.
 | V4 | `schema_version` is not a known version | Not the integer `1` |
 | V5 | `current_phase` is not in {PLAN, ETHICS, TRACK, COLLECT} | As stated |
 | V6 | `revision` is not a positive integer | Not an integer ≥ 1; `true` and `false` rejected |
-| V7 | Required body section heading missing | No `## Protocol Summary`, `## Ethics Checklist Status`, or `## TRACK Log` section. Section order and `## COLLECT Readiness` are not checked; the rule names only these three. When the heading is present but inside a fenced code block, the detail gives both line numbers |
-| V8 | Ethics Checklist Status YAML block is malformed | The section appears more than once, counting a `## Ethics Checklist Status` line inside a code fence; a code fence in it is still open at the end of the file; it has no yaml block or more than one; parse error or not a mapping; `items` missing or not a list (an empty list is fine); an item not a mapping or lacking `id` or `status`; `id` not in the roster (`5.1` reported as belonging in the `irb` block); a repeated `id`; `status` not in {PASS, NEEDS_ACTION, NOT_APPLICABLE}; `irb` missing or not a mapping; `irb.required` not `true` or `false`; `irb.status` not in {NOT_YET_SUBMITTED, SUBMITTED, APPROVED, EXEMPT} |
-| V9 | TRACK Log YAML block is malformed | The section appears more than once, counting a `## TRACK Log` line inside a code fence; a code fence in it is still open at the end of the file; it has no yaml block or more than one; parse error or not a mapping; `events` missing or not a list (an empty list is fine); an event not a mapping or lacking `ts` or `kind`; `kind` not in {count_update, timeline_change, quality_issue, agent_flag, user_note} |
+| V7 | Required body section heading missing | No `## Protocol Summary`, `## Ethics Checklist Status`, or `## TRACK Log` section. Section order and `## COLLECT Readiness` are not checked; the rule names only these three. When the heading is present but inside a fenced code block, the detail gives both line numbers; when a heading variant stands for it, the detail gives that line. Also HTML anywhere in the body outside the checked sections, reported at `body` with its line, because HTML can hide a section heading |
+| V8 | Ethics Checklist Status YAML block is malformed | The section appears more than once, counting a `## Ethics Checklist Status` line inside a code fence; a heading variant for it appears anywhere in the body; it has HTML; a code fence in it is still open at the end of the file; it has no yaml block or more than one; it has other code (a fenced block that is not yaml, an indented yaml fence, a fence inside a block quote or list, or a line indented four or more columns, also after block quote or list markers); parse error or not a mapping; `items` missing or not a list (an empty list is fine); an item not a mapping or lacking `id` or `status`; `id` not in the roster (`5.1` reported as belonging in the `irb` block); a repeated `id`; `status` not in {PASS, NEEDS_ACTION, NOT_APPLICABLE}; `irb` missing or not a mapping; `irb.required` not `true` or `false`; `irb.status` not in {NOT_YET_SUBMITTED, SUBMITTED, APPROVED, EXEMPT} |
+| V9 | TRACK Log YAML block is malformed | The section appears more than once, counting a `## TRACK Log` line inside a code fence; a heading variant for it appears anywhere in the body; it has HTML; a code fence in it is still open at the end of the file; it has no yaml block or more than one; it has other code, as for V8; parse error or not a mapping; `events` missing or not a list (an empty list is fine); an event not a mapping or lacking `ts` or `kind`; `kind` not in {count_update, timeline_change, quality_issue, agent_flag, user_note} |
 | V10 | Any timestamp is missing timezone | See below |
 
 A **timestamp** is `YYYY-MM-DDTHH:MM`, optionally followed by `:SS` and a
@@ -146,6 +177,11 @@ A missing `answered_at` or `irb.status_changed_at` key is read as null.
 Duplicate sections, section headings inside code fences, unclosed fences
 and multiple yaml blocks are malformed rather than resolved by taking the
 first, so a pasted copy of a section cannot be read in place of the real one.
+HTML, heading variants, and code other than the one yaml block in a checked
+section are malformed for the same reason: each can show a reader one thing
+while the checker reads another. In V8 and V9, the problems up to the parse
+error are checked in the order listed and only the first is reported, since
+each later check depends on the earlier ones passing.
 
 ### Ethics status derivation
 
@@ -286,9 +322,12 @@ artifact values in the output as data.
 | Moment | Use |
 |---|---|
 | RESUME, Validate step | Replaces validating by hand. Exit 1: refuse to resume and quote the `problems` lines. Exit 0: take `ethics_status` into the resume context; if the phase is TRACK or COLLECT and the status is not READY, say so in the confirmation |
+| PERSIST, step 3 (compose) | Keep the layout the checker requires (§ Parsing): in the body no `<` followed by a letter, `/`, `!` or `?` except the template's own placeholders (a rule stricter than the checker's HTML test, and checkable by eye); each section heading exactly `## <name>`; only text and the one yaml block in the checked sections |
 | PERSIST, step 5 (read back and validate) | The checker is the read-back: it reads the written file and applies the validation rules. Exit 1: the existing "read-back validation failed" message, with the `problems` lines. Exit 0: its `ethics_status` is current |
 | Moving ETHICS → TRACK | Write any pending ethics changes first. Then, only if a checker run on that artifact reports `ethics_status: READY`, write `current_phase: TRACK` as a separate write |
-| Reporting or acting on ethics status | Use a checker run on the artifact as it is on disk: the PERSIST step 5 run of the same turn, or a fresh run. If the phase is TRACK or COLLECT and the status is not READY, tell the user plainly that recruitment and data collection stop until it is READY again (the existing hard-gate rule), and offer to resolve the listed items. Do not change `current_phase` on your own |
+| Reporting or acting on ethics status | Use a checker run on the artifact as it is on disk: the PERSIST step 5 run of the same turn, or a fresh run. If the phase is TRACK or COLLECT and the status is not READY, tell the user plainly that recruitment and data collection stop, and that no data goes to analysis, until it is READY again (the existing hard-gate rule), and offer to resolve the listed items. Do not change `current_phase` on your own |
+| Recording IRB approval | `status_changed_at` is the time the agent records the approval, not the date on the approval letter, so reconfirmation means answering again after the approval is on record |
+| COLLECT, collection reported complete | "Data is ready for analysis" only when the readiness checks pass and the ethics status is READY. Otherwise record collection as complete; the data is not ready for analysis (the row above) |
 
 **When the checker cannot run** (exit 2, or no command tool): tell the user
 once, in plain language, what failed and how to fix it (install PyYAML, or
@@ -307,7 +346,7 @@ fallback procedure.
 | `scripts/check_study_state.py` | New |
 | `tests/test_check_study_state.py` | New; `unittest` only, run with `python3 -m unittest discover tests` |
 | `.gitignore` | New; ignores `__pycache__/`, which running the tests creates |
-| `agents/study_manager_agent.md` | RESUME validate step and its ethics paragraph; ETHICS evaluation order (refinements) and hard gate; PERSIST step 5; the fallback; Integration Points › Runtime requirements |
+| `agents/study_manager_agent.md` | RESUME validate step and its ethics paragraph; ETHICS evaluation order (refinements), hard gate, and IRB approval transition (`status_changed_at`); COLLECT (analysis handoff needs READY); PERSIST steps 3 (layout) and 5; the fallback; Integration Points › Runtime requirements |
 | `references/study_state_protocol.md` | PREAMBLE-NOTE: where this spec supersedes the 2026-05-02 spec, this spec wins. § Ethics derivation rules: the checker computes the status. One pointer line after each of the Validation rules, IRB approval reconfirmation set, and Write protocol blocks. Text inside INLINE-FROM-SPEC blocks is not changed, so the inlined pairs do not drift |
 | `references/irb_ethics_checklist.md` | One sentence appended to the READY Instructions line: for studies with a saved state file, the agent's evaluation order adds conditions, and the stricter result applies. It is not a new line, because a new line would move row 5.1, which the protocol's Artifact format text cites by line number |
 | `SKILL.md` | Runtime Requirements: the checker, its dependencies, the fallback, and that without command execution a study cannot move to TRACK. Reference Files: a row for the checker |
@@ -345,6 +384,14 @@ follow the shipped files. Tests run on Python 3.9 and on a current Python 3.
 | `## Ethics Checklist Status` appears twice | INVALID, V8 |
 | `## TRACK Log` removed | INVALID, V7 |
 | Event `kind: note` | INVALID, V9 |
+| HTML in a checked section; HTML elsewhere in the body; the blank template's `<…>` placeholders | INVALID, V8 or V9; INVALID, V7 at `body`; VALID |
+| A checked section's heading indented, with a tab, closing `#`s, two spaces, another level, an invisible character, a combining mark inside a word, in a block quote, or underlined (also with a single `-`) | INVALID, V8 or V9 |
+| A plain code block or an indented line in a checked section, also after `>` or `-` | INVALID, V8 or V9 |
+| A closing fence indented four spaces or a tab, or followed by an ideographic space | The block stays open |
+| CR line endings | Same result as LF |
+| A heading with a 5,000-digit character reference | Text, as in CommonMark; no problem |
+| A merge key; a tag such as `!!timestamp` or `!!int abc` | INVALID, parse error |
+| `=` as a key or a value | A string |
 | No frontmatter delimiter | INVALID, V1 |
 | Roster | 31 IDs from the ID map, `5.1` excluded |
 | ID map missing, or with a category 7 row | Exit 2 |
@@ -362,6 +409,16 @@ recruitment must stop.
   values, a timestamp without offset) become INVALID with a message naming
   the field; the user fixes it or recreates the study, as the validation
   rules already prescribe.
+- The layout is strict. An artifact with HTML, with a checked section's
+  heading written another way, or with code other than the yaml block in a
+  checked section is INVALID, even when a person wrote it by hand. Some text
+  counts as HTML that a person may not mean as such: `` `<br>` `` in inline
+  code, or a placeholder such as `<to be decided>`, which CommonMark reads
+  as a tag and GitHub does not show.
+- Not caught: a heading spelled with look-alike letters from another
+  alphabet, such as Cyrillic Ie (U+0415) in place of a Latin E, reads as a
+  different name. The standard library has no table to fold look-alike
+  letters.
 - Derived status can become stricter for v1.1.0 artifacts (missing answer
   times, reconfirmation not done after approval). For a study already in
   TRACK, the agent then says recruitment must stop until the listed items are
@@ -389,3 +446,8 @@ recruitment must stop.
 | 2026-09-24 | Protocol pointers placed outside INLINE-FROM-SPEC blocks; PREAMBLE-NOTE amended | Keeps the 2026-05-02 spec unchanged without the protocol's "spec wins" rule pulling this change back |
 | 2026-09-24 | Python 3.9+ | Covers the python3 that macOS provides with its command line developer tools (3.9) |
 | 2026-09-24 | Pre-merge review fixes: keys from a merge count as repeats; section headings in code fences and unclosed fences are malformed; timestamps compared with every fractional digit; the command single-quotes both paths | The pre-merge reviews found ways for a crafted file to show a reader one block and the checker another, and a way for a path read from the artifact to reach the shell |
+| 2026-09-24 | Strict layout: HTML in the body, a checked section's heading written another way, and code other than the one yaml block in a checked section are malformed; code fences and line endings follow CommonMark | The second review round found more of the same kind of gap. User choice: reject whatever the checker does not read, rather than teach it more of Markdown |
+| 2026-09-24 | Merge keys and tags are parse errors, replacing "keys from a merge count as repeats" | A merge can hide a repeated key and grow without limit. A tag builds values the checks do not expect, and some tagged values made the checker fail instead of reporting INVALID |
+| 2026-09-24 | Heading names compared by a rule (drop what does not print on its own) rather than a list of variants | The cleanup review found a combining mark that split a word past the listed variants |
+| 2026-09-24 | "Data is ready for analysis" needs ethics status READY | User choice: collection can be recorded as complete, but the handoff to analysis waits for READY |
+| 2026-09-24 | `status_changed_at` is the time the agent records the IRB approval | Reconfirmation compares answer times with it; with the recording time, only answers given after the approval is on record count |

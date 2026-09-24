@@ -129,6 +129,10 @@ class LoaderTest(unittest.TestCase):
         self.assertEqual(data, {"at": "2026-04-12T14:00:00+08:00", "day": "2026-04-15",
                                 "id": "1.10", "count": 3, "flag": True})
 
+    def test_equals_sign_is_text(self):
+        # YAML 1.1 gives a lone "=" its own type, which no constructor builds.
+        self.assertEqual(checker.load_yaml("=: x\ny: =\n"), {"=": "x", "y": "="})
+
 
 class TimestampTest(unittest.TestCase):
     def test_accepts_offsets_and_z(self):
@@ -159,12 +163,14 @@ def rules(result):
 
 class StructureTest(unittest.TestCase):
     def test_shipped_files_are_valid(self):
+        # The blank template's placeholders, such as "<Cumulative protocol notes ...>", are text, not HTML.
         for name, text in (("example", EXAMPLE), ("new study", new_study())):
             with self.subTest(name):
                 self.assertEqual(check(text).problems, [])
 
     def test_line_endings_and_byte_order_mark(self):
-        for name, text in (("CRLF", EXAMPLE.replace("\n", "\r\n")), ("BOM", "\ufeff" + EXAMPLE)):
+        for name, text in (("CRLF", EXAMPLE.replace("\n", "\r\n")), ("CR", EXAMPLE.replace("\n", "\r")),
+                           ("BOM", "\ufeff" + EXAMPLE)):
             with self.subTest(name):
                 self.assertEqual(check(text).problems, [])
 
@@ -227,6 +233,78 @@ class StructureTest(unittest.TestCase):
         self.assertIn("inside a code block opened on line", result.problems[0].detail)
         tilde = check(edit(EXAMPLE, "**Design.**", "~~~\nnotes pasted without a closing fence\n\n**Design.**"))
         self.assertEqual(rules(tilde), [(checker.V7, "## Ethics Checklist Status"), (checker.V7, "## TRACK Log")])
+
+    def test_html_that_can_hide_text_is_malformed(self):
+        cases = {
+            "comment in the Ethics section": ("```yaml\nitems:", "<!-- reviewed -->\n\n```yaml\nitems:",
+                                              checker.V8, "## Ethics Checklist Status"),
+            "block in the TRACK section": ("```yaml\nevents:", "<details>\n\n```yaml\nevents:",
+                                           checker.V9, "## TRACK Log"),
+            "comment in another section": ("## Protocol Summary\n", "## Protocol Summary\n\n> <!--\n-->\n",
+                                           checker.V7, "body"),
+        }
+        for name, (old, new, rule, location) in cases.items():
+            with self.subTest(name):
+                result = check(edit(EXAMPLE, old, new))
+                self.assertEqual(rules(result), [(rule, location)])
+                self.assertIn("HTML", result.problems[0].detail)
+
+    def test_yaml_block_hidden_behind_a_visible_decoy_is_not_read(self):
+        real = EXAMPLE[EXAMPLE.index("```yaml\nitems:"):EXAMPLE.index("```\n\n## TRACK Log") + len("```\n")]
+        decoy = set_status(edit(real, "```yaml", "```"), "1.1", "NEEDS_ACTION")
+        self.assertFalse(check(edit(EXAMPLE, real, decoy + "\n<!--\n" + real + "-->\n")).valid)
+
+    def test_other_ways_to_write_a_checked_heading_are_malformed(self):
+        # A reader sees each of these as a heading for the section; the checker reads only "## <name>".
+        variants = {
+            "indented": " ## Ethics Checklist Status",
+            "tab": "##\tEthics Checklist Status",
+            "closing hashes": "## Ethics Checklist Status ##",
+            "two spaces": "##  Ethics Checklist Status",
+            "other level": "### Ethics Checklist Status",
+            "invisible character": "## Ethics Checklist Status" + chr(0x200B),
+            "combining mark inside a word": "## Eth" + chr(0xFE0F) + "ics Checklist Status",
+            "in a quote": "> ## Ethics Checklist Status",
+            "underlined": "Ethics Checklist Status\n---",
+            "underlined with one dash": "Ethics Checklist Status\n-",
+        }
+        for name, heading in variants.items():
+            with self.subTest(name):
+                result = check(edit(EXAMPLE, "## TRACK Log\n", heading + "\n\n## TRACK Log\n"))
+                self.assertEqual(rules(result), [(checker.V8, "## Ethics Checklist Status")])
+        track = check(edit(EXAMPLE, "## COLLECT Readiness\n", "## TRACK Log ##\n\n## COLLECT Readiness\n"))
+        self.assertEqual(rules(track), [(checker.V9, "## TRACK Log")])
+
+    def test_checked_sections_hold_only_text_and_their_yaml_block(self):
+        extra_fence = check(edit(EXAMPLE, "```yaml\nitems:", "```\nitems: []\n```\n\n```yaml\nitems:"))
+        self.assertEqual(rules(extra_fence), [(checker.V8, "## Ethics Checklist Status")])
+        indented_code = check(edit(EXAMPLE, "```yaml\nevents:", "    events: []\n\n```yaml\nevents:"))
+        self.assertEqual(rules(indented_code), [(checker.V9, "## TRACK Log")])
+        for prefix in (">     ", "-     "):  # indented code inside a quote or a list item
+            with self.subTest(prefix):
+                inside = check(edit(EXAMPLE, "```yaml\nevents:", prefix + "events: []\n\n```yaml\nevents:"))
+                self.assertEqual(rules(inside), [(checker.V9, "## TRACK Log")])
+
+    def test_closing_fence_follows_markdown_rules(self):
+        # A reader keeps the block open after these lines, so the checker must too.
+        for closing in ("    ```", "\t```", "```" + chr(0x3000)):
+            with self.subTest(repr(closing)):
+                result = check(edit(EXAMPLE, "```\n\n## TRACK Log", closing + "\n\n## TRACK Log"))
+                self.assertFalse(result.valid)
+                self.assertIn((checker.V7, "## TRACK Log"), rules(result))
+
+    def test_long_character_reference_in_a_heading_is_text(self):
+        # Markdown reads at most 7 digits as a character reference; Python 3.11+ refuses to convert 4,300.
+        heading = "### Notes &#" + "9" * 5000 + ";\n\n"
+        self.assertEqual(check(edit(EXAMPLE, "## TRACK Log\n", heading + "## TRACK Log\n")).problems, [])
+
+    def test_long_lines_are_read_in_linear_time(self):
+        # A pattern that rescans the rest of the line takes seconds on lines like these.
+        for line in ("## " + "](" * 100000, ">" * 800000, "### x &#" + "7" * 200000 + ";"):
+            with self.subTest(line[:8]):
+                started = time.monotonic()
+                check(edit(EXAMPLE, "**Design.**", line + "\n\n**Design.**"))
+                self.assertLess(time.monotonic() - started, 2)
 
     def test_repeated_yaml_aliases_are_checked_once(self):
         aliases = ['a0: &a0 ["x", "x", "x", "x", "x", "x", "x", "x", "x", "x"]']
@@ -345,12 +423,6 @@ class BlockTest(unittest.TestCase):
         cases = {
             "item status": ('- id: "2.2"\n    status: PASS', '- id: "2.2"\n    status: NEEDS_ACTION\n    status: PASS',
                             checker.V8, "## Ethics Checklist Status", "status"),
-            "item status from a merge": ('- id: "2.2"\n    status: PASS',
-                                         '- id: "2.2"\n    <<: {status: NEEDS_ACTION, status: PASS}',
-                                         checker.V8, "## Ethics Checklist Status", "status"),
-            "item status merged and written out": ('- id: "2.2"\n    status: PASS',
-                                                   '- id: "2.2"\n    <<: {status: NEEDS_ACTION}\n    status: PASS',
-                                                   checker.V8, "## Ethics Checklist Status", "status"),
             "irb block": ("irb:\n  required: true", "irb:\n  required: true\n  status: SUBMITTED\nirb:\n  required: true",
                           checker.V8, "## Ethics Checklist Status", "irb"),
             "frontmatter field": ("current_phase: TRACK", "current_phase: ETHICS\ncurrent_phase: TRACK",
@@ -365,11 +437,43 @@ class BlockTest(unittest.TestCase):
                 self.assertEqual(result.problems[0].detail,
                                  f'YAML does not parse: found duplicate key "{key}" (line {line})')
 
-    def test_merges_without_repeated_keys_and_complex_keys(self):
-        merged = edit(EXAMPLE, "```yaml\nevents:\n", "```yaml\nflag: &flag {kind: agent_flag}\nevents:\n")
-        merged = edit(merged, "  - ts: 2026-04-28T16:42:00+08:00\n    kind: agent_flag\n",
-                      "  - <<: *flag\n    ts: 2026-04-28T16:42:00+08:00\n")
-        self.assertEqual(check(merged).problems, [])
+    def test_merge_keys_are_malformed(self):
+        # A merge can hide a repeated key and can grow without limit; study state artifacts never use one.
+        nested = "{k: 1}"
+        for level in range(12):
+            nested = f"{{<<: [&n{level} {nested}, *n{level}]}}"
+        cases = {
+            "frontmatter": ("current_phase: TRACK", "<<: {current_phase: TRACK}", checker.V2, "frontmatter"),
+            "item": ('- id: "2.2"\n    status: PASS', '- id: "2.2"\n    <<: {status: PASS}',
+                     checker.V8, "## Ethics Checklist Status"),
+            "two in one item": ('- id: "2.2"\n    status: PASS', '- id: "2.2"\n    <<: {status: PASS}\n    <<: {extra: x}',
+                                checker.V8, "## Ethics Checklist Status"),
+            "nested doubling": ("```yaml\nevents:\n", f"```yaml\nshape: {nested}\nevents:\n", checker.V9, "## TRACK Log"),
+        }
+        for name, (old, new, rule, location) in cases.items():
+            with self.subTest(name):
+                result = check(edit(EXAMPLE, old, new))
+                self.assertEqual(rules(result), [(rule, location)])
+                self.assertIn("merge key", result.problems[0].detail)
+
+    def test_tagged_values_are_malformed(self):
+        # A tagged value would skip the checks that expect text, such as the timezone rule, or fail outside YAML.
+        note = 'note: "Survey only, no physical procedures"'
+        cases = {
+            "timestamp": ("timeline:\n", "tagged: !!timestamp 2026-04-15T09:00:00\ntimeline:\n", checker.V2, "frontmatter"),
+            "float": (note, "note: !!float 1.5", checker.V8, "## Ethics Checklist Status"),
+            "int that is not a number": (note, "note: !!int abc", checker.V8, "## Ethics Checklist Status"),
+            "bool that is not true or false": (note, "note: !!bool maybe", checker.V8, "## Ethics Checklist Status"),
+            "local tag": (note, "note: !private x", checker.V8, "## Ethics Checklist Status"),
+            "set": ("```yaml\nevents:\n", "```yaml\ntags: !!set {a, b}\nevents:\n", checker.V9, "## TRACK Log"),
+        }
+        for name, (old, new, rule, location) in cases.items():
+            with self.subTest(name):
+                result = check(edit(EXAMPLE, old, new))
+                self.assertEqual(rules(result), [(rule, location)])
+                self.assertIn("found the tag", result.problems[0].detail)
+
+    def test_complex_keys_fail_in_the_loader(self):
         complex_key = check(edit(EXAMPLE, "```yaml\nevents:\n", "```yaml\n? [a, b]\n: x\nevents:\n"))
         self.assertEqual(rules(complex_key), [(checker.V9, "## TRACK Log")])
         self.assertIn("found unhashable key", complex_key.problems[0].detail)
@@ -393,7 +497,8 @@ class DerivationTest(unittest.TestCase):
         self.assertEqual(status(EXAMPLE), ("READY", ["none"]))
 
     def test_line_endings_and_byte_order_mark_do_not_change_the_result(self):
-        for name, text in (("CRLF", EXAMPLE.replace("\n", "\r\n")), ("BOM", "\ufeff" + EXAMPLE)):
+        for name, text in (("CRLF", EXAMPLE.replace("\n", "\r\n")), ("CR", EXAMPLE.replace("\n", "\r")),
+                           ("BOM", "\ufeff" + EXAMPLE)):
             with self.subTest(name):
                 self.assertEqual(status(text), ("READY", ["none"]))
 
