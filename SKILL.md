@@ -88,7 +88,9 @@ Dispatching or delegating to an agent in this skill means reading its file under
 
 Most modes work with any LLM runtime that supports prompt + reasoning.
 
-**Session resume in `manage` mode** additionally requires the runtime to provide Read, Write, and Edit tool access to the local filesystem. Claude Code provides these. Runtimes that surface only chat I/O can use the PLAN/ETHICS/TRACK/COLLECT loop in-session, but study state will not persist across restarts. The `resume <study_id>` command will be unavailable.
+**Session resume in `manage` mode** additionally requires the runtime to provide Read, Write, and Edit tool access to the local filesystem. Claude Code provides these. Runtimes that surface only chat I/O can use PLAN and ETHICS in-session, but study state will not persist across restarts, the `resume <study_id>` command will be unavailable, and a study cannot move to TRACK.
+
+**The study state checker** (`scripts/check_study_state.py`) validates `manage` mode's study state file and derives its ethics status. It needs a command tool (Bash in Claude Code), Python 3.9 or later, and PyYAML (`python3 -m pip install pyyaml`). Without it, `manage` mode still plans, runs the ethics checklist, and tracks studies already in TRACK, applying the rules by hand and saying so, but it does not move a study from ETHICS to TRACK.
 
 ---
 
@@ -161,7 +163,7 @@ Plan mode outputs use separate templates and also carry Material Passport:
 
 | # | Rule |
 |---|------|
-| 1 | Only execute user-specified commands — never auto-generate or modify scripts |
+| 1 | Only execute user-specified commands — never auto-generate or modify scripts. Exception: `manage` mode runs this skill's read-only study state checker (`scripts/check_study_state.py`) |
 | 2 | Never auto-retry crashed experiments — notify user, user decides |
 | 3 | Never auto-kill except hard timeout — notify before kill |
 | 4 | Monitor only user-specified output paths |
@@ -196,6 +198,7 @@ Plan mode outputs use separate templates and also carry Material Passport:
 | `references/reproducibility_protocol.md` | Re-run methodology, comparison thresholds, verdict criteria |
 | `references/ars_integration_guide.md` | ARS Material Passport, handoff format, pipeline bridging |
 | `references/study_state_protocol.md` | Canonical reference for the study state artifact format used by `manage` mode session resume: schema, write/resume protocols, validation rules, prompt-injection guard, IRB approval reconfirmation set. |
+| `scripts/check_study_state.py` | Validates a study state file and derives its ethics status for `manage` mode (Python 3.9+, PyYAML). |
 | `templates/output_formats.md` | Complete Markdown output templates for all three output types |
 
 ---

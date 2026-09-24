@@ -11,7 +11,7 @@ Structured checklist for study_manager_agent ETHICS phase. Agent presents each i
 - Category 5.1 missing required approval/exemption → ethics_status: ETHICS_PENDING
 - Any NEEDS_ACTION in category 5.2-6.4 → ethics_status: ETHICS_PENDING
 - `ETHICS_PENDING` means planning may continue, but participant recruitment and data collection cannot start until status becomes `READY`
-- All required items PASS or NOT_APPLICABLE, and institutional approval is `Approved` or `Exempt` when required → ethics_status: READY
+- All required items PASS or NOT_APPLICABLE, and institutional approval is `Approved` or `Exempt` when required → ethics_status: READY. For a study with a saved state file, the evaluation order in `agents/study_manager_agent.md` (ETHICS) adds conditions, and the stricter result applies.
 
 ---
 

@@ -8,7 +8,9 @@ explicit out-of-scope behaviors for v1.1.0.
 
 <!-- PREAMBLE-NOTE (for maintainers): When this document and the design spec
 (docs/specs/2026-05-02-session-resume-design.md) disagree, the spec wins and
-this document needs a fix. Sections marked INLINE-FROM-SPEC have parallel
+this document needs a fix, except where
+docs/specs/2026-09-24-study-state-checker-design.md supersedes that spec:
+there the newer spec wins. Sections marked INLINE-FROM-SPEC have parallel
 counterparts in docs/specs/2026-05-02-session-resume-design.md (marked
 ALSO-INLINED-IN there). The two versions describe the same rules but may
 differ in wording, section order, or framing — this doc tunes for agent
@@ -226,10 +228,12 @@ See also `templates/study_state.md` (skeleton) and
 The 4-state strict-precedence derivation (NOT_YET_ASSESSED → ETHICS_BLOCKED
 → ETHICS_PENDING → READY) is the evaluation order in the ETHICS section of
 `agents/study_manager_agent.md`.
-The agent MUST compute this every turn from the artifact body, not store it
-in frontmatter. `ethics_status` is a derived value: the source of truth is
-the per-item `status` fields in the Ethics Checklist Status YAML block plus
-the `irb` block. The strict-precedence evaluation order guarantees that
+`scripts/check_study_state.py` computes it from the artifact on disk; the
+agent runs the checker instead of deriving it by hand, except when the
+checker cannot run. It is never stored in frontmatter. `ethics_status` is a
+derived value: the source of truth is the per-item `status` and
+`answered_at` fields in the Ethics Checklist Status YAML block plus the
+`irb` block. The strict-precedence evaluation order guarantees that
 overlapping conditions (e.g., a critical item NEEDS_ACTION AND IRB still
 SUBMITTED) resolve unambiguously — first matching rule wins.
 
@@ -256,6 +260,10 @@ For each reconfirmed item the agent asks: "did the IRB's approval require
 any change to <item label from the ID map above>?" If unchanged, status
 stays PASS with a fresh `answered_at` timestamp.
 <!-- /INLINE-FROM-SPEC: IRB approval reconfirmation set -->
+
+`scripts/check_study_state.py` checks that this reconfirmation was done;
+the exact condition is `ETHICS_PENDING` (step 3) in the ETHICS evaluation
+order of `agents/study_manager_agent.md`.
 
 ## Write protocol
 
@@ -291,6 +299,9 @@ failure modes — concurrent writes, partial writes, schema drift — but not
 all of them. A truncated mid-write is the residual risk; this protocol
 documents it rather than solving it.
 <!-- /INLINE-FROM-SPEC: Write protocol -->
+
+Step 5 is a run of `scripts/check_study_state.py` on the written file (see
+PERSIST in `agents/study_manager_agent.md`).
 
 ## Resume protocol
 
@@ -349,6 +360,10 @@ on invalid artifacts (refuses to resume, refuses to write).
 The agent's failure message MUST tell the user which specific rule failed,
 so the user can decide whether to fix manually or recreate the study.
 <!-- /INLINE-FROM-SPEC: Validation rules -->
+
+`scripts/check_study_state.py` implements these rules. The precise
+definition of each, including what counts as malformed, is in
+`docs/specs/2026-09-24-study-state-checker-design.md` § Validation rules.
 
 ## Prompt-injection guard
 

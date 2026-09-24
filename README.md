@@ -65,14 +65,14 @@ Use experiment-agent when your research requires running experiments (code or hu
 **Step 1**: Clone this repo alongside your ARS project (or anywhere on your machine):
 
 ```bash
-cd ~/Projects/HEEACT
+cd ~/Projects
 git clone https://github.com/Imbad0202/experiment-agent.git
 ```
 
 **Step 2**: When you need to run experiments, open a Claude Code session **in the experiment-agent directory**:
 
 ```bash
-cd ~/Projects/HEEACT/experiment-agent
+cd ~/Projects/experiment-agent
 claude
 ```
 
@@ -80,11 +80,21 @@ claude
 
 **Step 4**: After your experiments are done and validated, copy the output (which includes a Material Passport header and verification status) back into your ARS session to continue Stage 2.
 
+### Requirements for human studies
+
+`manage` mode checks each study's state file with `scripts/check_study_state.py`, which needs Python 3.9 or later and PyYAML:
+
+```bash
+python3 -m pip install pyyaml
+```
+
+If pip stops with an `externally-managed-environment` error, follow that message's instructions to install PyYAML for the `python3` on your PATH. Claude Code asks for permission before it runs the checker; you can choose not to be asked again. Without the checker, `manage` mode still plans studies and runs the ethics checklist, but it will not move a study into data collection.
+
 > You can also add this skill to any project via `.claude/skills/` symlink — see [Claude Code docs](https://docs.anthropic.com/en/docs/claude-code) for skill installation.
 
 ## Safety
 
-- Only executes commands you specify — never auto-generates or modifies your code
+- Only executes commands you specify — never auto-generates or modifies your code. The one exception: `manage` mode runs this skill's read-only study state checker
 - Never auto-retries crashed experiments
 - Never touches raw participant data
 - Statistical interpretation describes, never concludes
