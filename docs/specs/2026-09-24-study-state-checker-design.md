@@ -105,7 +105,8 @@ item IDs stay exactly as written, so an unquoted `1.10` cannot collapse into
   `yaml` or `yml` (any case).
 - **Repeated keys**: a key that appears twice in one YAML mapping is a parse
   error (V2 in the frontmatter, V8 or V9 in a block). YAML does not allow
-  it, and keeping either value could hide a blocking answer.
+  it, and keeping either value could hide a blocking answer. Keys that a
+  merge (`<<`) brings in count too.
 
 ### Validation rules
 
@@ -124,8 +125,8 @@ lists and parentheses, so the agent can tell the user which rule failed.
 | V5 | `current_phase` is not in {PLAN, ETHICS, TRACK, COLLECT} | As stated |
 | V6 | `revision` is not a positive integer | Not an integer ≥ 1; `true` and `false` rejected |
 | V7 | Required body section heading missing | No `## Protocol Summary`, `## Ethics Checklist Status`, or `## TRACK Log` section. Section order and `## COLLECT Readiness` are not checked; the rule names only these three. When the heading is present but inside a fenced code block, the detail gives both line numbers |
-| V8 | Ethics Checklist Status YAML block is malformed | The section appears more than once; it has no yaml block or more than one; parse error or not a mapping; `items` missing or not a list (an empty list is fine); an item not a mapping or lacking `id` or `status`; `id` not in the roster (`5.1` reported as belonging in the `irb` block); a repeated `id`; `status` not in {PASS, NEEDS_ACTION, NOT_APPLICABLE}; `irb` missing or not a mapping; `irb.required` not `true` or `false`; `irb.status` not in {NOT_YET_SUBMITTED, SUBMITTED, APPROVED, EXEMPT} |
-| V9 | TRACK Log YAML block is malformed | The section appears more than once; it has no yaml block or more than one; parse error or not a mapping; `events` missing or not a list (an empty list is fine); an event not a mapping or lacking `ts` or `kind`; `kind` not in {count_update, timeline_change, quality_issue, agent_flag, user_note} |
+| V8 | Ethics Checklist Status YAML block is malformed | The section appears more than once, counting a `## Ethics Checklist Status` line inside a code fence; a code fence in it is still open at the end of the file; it has no yaml block or more than one; parse error or not a mapping; `items` missing or not a list (an empty list is fine); an item not a mapping or lacking `id` or `status`; `id` not in the roster (`5.1` reported as belonging in the `irb` block); a repeated `id`; `status` not in {PASS, NEEDS_ACTION, NOT_APPLICABLE}; `irb` missing or not a mapping; `irb.required` not `true` or `false`; `irb.status` not in {NOT_YET_SUBMITTED, SUBMITTED, APPROVED, EXEMPT} |
+| V9 | TRACK Log YAML block is malformed | The section appears more than once, counting a `## TRACK Log` line inside a code fence; a code fence in it is still open at the end of the file; it has no yaml block or more than one; parse error or not a mapping; `events` missing or not a list (an empty list is fine); an event not a mapping or lacking `ts` or `kind`; `kind` not in {count_update, timeline_change, quality_issue, agent_flag, user_note} |
 | V10 | Any timestamp is missing timezone | See below |
 
 A **timestamp** is `YYYY-MM-DDTHH:MM`, optionally followed by `:SS` and a
@@ -142,9 +143,9 @@ time. V10 fails when:
 
 A missing `answered_at` or `irb.status_changed_at` key is read as null.
 
-Duplicate sections and multiple yaml blocks are malformed rather than
-resolved by taking the first, so a pasted copy of a section cannot be read in
-place of the real one.
+Duplicate sections, section headings inside code fences, unclosed fences
+and multiple yaml blocks are malformed rather than resolved by taking the
+first, so a pasted copy of a section cannot be read in place of the real one.
 
 ### Ethics status derivation
 
@@ -163,10 +164,11 @@ Definitions:
 - **Not reconfirmed**: considered only when `irb.required` is true,
   `irb.status` is APPROVED, and `irb.status_changed_at` is set. It is the
   items in the reconfirmation set with status PASS whose `answered_at` is
-  earlier than `irb.status_changed_at`, compared as points in time (an equal
-  instant counts as reconfirmed). NEEDS_ACTION items are left out because
-  they already derive ETHICS_BLOCKED or ETHICS_PENDING; NOT_APPLICABLE items
-  are outside the set.
+  earlier than `irb.status_changed_at`, compared as points in time with
+  every fractional digit (an equal instant counts as reconfirmed).
+  NEEDS_ACTION items are left out because they already derive
+  ETHICS_BLOCKED or ETHICS_PENDING; NOT_APPLICABLE items are outside the
+  set.
 
 Evaluation order:
 
@@ -277,8 +279,9 @@ events, are addressed by zero-based position: `ethics.items[4]`,
 ### Agent integration
 
 `agents/study_manager_agent.md` runs the checker through its command tool
-(Bash in Claude Code), quoting the artifact path, and treats artifact values
-in the output as data.
+(Bash in Claude Code), with both paths in single quotes because the artifact
+path can come from the artifact's own `state_path_relative`, and treats
+artifact values in the output as data.
 
 | Moment | Use |
 |---|---|
@@ -385,3 +388,4 @@ recruitment must stop.
 | 2026-09-24 | Artifact values in the output are escaped unless single-line and printable | An artifact value must not be able to add a line such as `ethics_status: READY` to the output |
 | 2026-09-24 | Protocol pointers placed outside INLINE-FROM-SPEC blocks; PREAMBLE-NOTE amended | Keeps the 2026-05-02 spec unchanged without the protocol's "spec wins" rule pulling this change back |
 | 2026-09-24 | Python 3.9+ | Covers the python3 that macOS provides with its command line developer tools (3.9) |
+| 2026-09-24 | Pre-merge review fixes: keys from a merge count as repeats; section headings in code fences and unclosed fences are malformed; timestamps compared with every fractional digit; the command single-quotes both paths | The pre-merge reviews found ways for a crafted file to show a reader one block and the checker another, and a way for a path read from the artifact to reach the shell |

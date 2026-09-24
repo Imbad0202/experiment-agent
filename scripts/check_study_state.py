@@ -10,6 +10,7 @@ Rules: docs/specs/2026-09-24-study-state-checker-design.md
 """
 
 import datetime
+import decimal
 import json
 import re
 import sys
@@ -80,6 +81,7 @@ class Section(NamedTuple):
     heading: str
     line: int
     yaml_blocks: list  # (first content line number, text) of each yaml or yml fenced block
+    open_fence: int = None  # line of a code fence still open at the end of the file; None when all close
 
 
 class Result(NamedTuple):
@@ -134,11 +136,13 @@ def _string_loader():
     class Loader(yaml.SafeLoader):
         def construct_mapping(self, node, deep=False):
             # PyYAML keeps the last of repeated keys; the value it drops could be the blocking one.
+            # Merge keys (<<) are expanded first, so a key that a merge brings in counts too.
             if isinstance(node, yaml.MappingNode):
+                self.flatten_mapping(node)
                 keys = set()
                 for key_node, _ in node.value:
-                    if not isinstance(key_node, yaml.ScalarNode) or key_node.tag == "tag:yaml.org,2002:merge":
-                        continue  # merge keys (<<) may repeat; complex keys fail in the base class
+                    if not isinstance(key_node, yaml.ScalarNode):
+                        continue  # complex keys fail in the base class
                     key = self.construct_object(key_node)
                     if key in keys:
                         raise yaml.constructor.ConstructorError(
@@ -160,7 +164,8 @@ def load_yaml(text):
 
 
 def parse_timestamp(value):
-    """Return an aware datetime for an ISO 8601 date-time with offset, else None."""
+    """Return (aware datetime to the second, fraction of a second) for an ISO 8601 date-time
+    with offset, else None. The pair orders instants exactly, digits past microseconds included."""
     if not isinstance(value, str):
         return None
     match = TIMESTAMP_RE.fullmatch(value)
@@ -175,12 +180,12 @@ def parse_timestamp(value):
             return None
         sign = -1 if offset[0] == "-" else 1
         tz = datetime.timezone(sign * datetime.timedelta(hours=hours, minutes=minutes))
-    micro = int((fraction or "0")[:6].ljust(6, "0"))
     try:
-        return datetime.datetime(int(year), int(month), int(day), int(hour), int(minute),
-                                 int(second or 0), micro, tzinfo=tz)
+        moment = datetime.datetime(int(year), int(month), int(day), int(hour), int(minute),
+                                   int(second or 0), tzinfo=tz)
     except ValueError:
         return None
+    return moment, decimal.Decimal("0." + (fraction or "0"))
 
 
 def _numbered_lines(text):
@@ -218,9 +223,10 @@ def _fence_closes(text, fence):
 def split_sections(body):
     """Split body lines into '## ' sections, ignoring lines inside fenced code.
 
-    Each section collects its yaml and yml fenced blocks. Returns (sections, hidden).
-    hidden maps a '## ' heading found inside a fenced code block to (its line number,
-    the line number where that block opened).
+    Each section collects its yaml and yml fenced blocks, and the opening line of a
+    fence still open at the end of the file. Returns (sections, hidden). hidden maps
+    a '## ' heading found inside a fenced code block to (its line number, the line
+    number where that block opened).
     """
     sections, hidden, fence, fence_line, block = [], {}, None, None, None
     for number, text in body:
@@ -242,6 +248,8 @@ def split_sections(body):
                     block = []
             elif text.startswith("## "):
                 sections.append(Section(text[3:].rstrip(), number, []))
+    if fence and sections:
+        sections[-1] = sections[-1]._replace(open_fence=fence_line)
     return sections, hidden
 
 
@@ -349,7 +357,7 @@ def check_frontmatter(frontmatter, problems):
         "frontmatter.created", "frontmatter.updated", "frontmatter.track_summary.last_event_ts"})
 
 
-def _section_block(sections, name, rule, keys, problems):
+def _section_block(sections, hidden, name, rule, keys, problems):
     """Parse the one yaml block of the named section; record why when that fails."""
     found = [section for section in sections if section.heading == name]
     if not found:
@@ -359,6 +367,14 @@ def _section_block(sections, name, rule, keys, problems):
         lines = ", ".join(str(section.line) for section in found)
         problems.append(Problem(rule, where, f"section appears {len(found)} times "
                                 f"(lines {lines}); it must appear once"))
+        return None
+    if name in hidden:
+        problems.append(Problem(rule, where, "another heading for this section on line %d is inside a code "
+                                "block opened on line %d; the section must appear once" % hidden[name]))
+        return None
+    if found[0].open_fence:
+        problems.append(Problem(rule, where, f"a code block opened on line {found[0].open_fence} "
+                                "is never closed"))
         return None
     blocks = found[0].yaml_blocks
     if len(blocks) != 1:
@@ -514,10 +530,10 @@ def check_artifact(text, roster):
             if name in hidden:
                 detail += " (its heading on line %d is inside a code block opened on line %d)" % hidden[name]
             problems.append(Problem(V7, f"## {name}", detail))
-    ethics = _section_block(sections, ETHICS_SECTION, V8, "items and irb", problems)
+    ethics = _section_block(sections, hidden, ETHICS_SECTION, V8, "items and irb", problems)
     if ethics is not None:
         check_ethics(ethics, roster, problems)
-    track = _section_block(sections, TRACK_SECTION, V9, "events", problems)
+    track = _section_block(sections, hidden, TRACK_SECTION, V9, "events", problems)
     if track is not None:
         check_track(track, problems)
     if problems:

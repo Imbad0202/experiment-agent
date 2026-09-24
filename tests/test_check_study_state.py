@@ -114,6 +114,14 @@ class ProtocolTextTest(unittest.TestCase):
         self.assertEqual([item.item_id for item in ROSTER if checker.in_reconfirmation_set(item)], expected)
 
 
+class AgentTextTest(unittest.TestCase):
+    def test_checker_command_single_quotes_both_paths(self):
+        # The artifact path can come from the artifact itself; inside double quotes the shell still runs $(...).
+        agent = (REPO / "agents" / "study_manager_agent.md").read_text(encoding="utf-8")
+        commands = [line for line in agent.split("\n") if line.startswith("python3 ")]
+        self.assertEqual(commands, ["python3 '<skill directory>/scripts/check_study_state.py' '<artifact path>'"])
+
+
 class LoaderTest(unittest.TestCase):
     def test_timestamps_and_decimals_stay_strings(self):
         data = checker.load_yaml(
@@ -280,10 +288,28 @@ class BlockTest(unittest.TestCase):
         self.assertIn("appears 2 times", result.problems[0].detail)
         two_blocks = edit(EXAMPLE, "```\n\n## TRACK Log", "```\n\n```yaml\nitems: []\n```\n\n## TRACK Log")
         self.assertIn("has 2 yaml blocks", check(two_blocks).problems[0].detail)
-        no_block = check(edit(EXAMPLE, "```yaml\nevents:", "events:"))
+        no_block = check(edit(EXAMPLE, "```yaml\nevents:", "```\nevents:"))
         self.assertEqual(rules(no_block), [(checker.V9, "## TRACK Log")])
         self.assertIn("has no yaml blocks", no_block.problems[0].detail)
         self.assertEqual(check(edit(EXAMPLE, "```yaml\nevents:", "```YML\nevents:")).problems, [])
+
+    def test_copy_of_a_section_heading_inside_a_code_block_is_malformed(self):
+        # A pasted copy followed by an unclosed fence would otherwise hide the real section behind the copy.
+        copy = EXAMPLE[EXAMPLE.index("## Ethics Checklist Status\n"):EXAMPLE.index("## TRACK Log\n")]
+        text = edit(set_status(EXAMPLE, "2.2", "NEEDS_ACTION"), "## Protocol Summary\n",
+                    "## Protocol Summary\n\n" + copy + "```\n\n")
+        result = check(text)
+        self.assertEqual(rules(result), [(checker.V8, "## Ethics Checklist Status")])
+        self.assertIn("inside a code block opened on line", result.problems[0].detail)
+
+    def test_yaml_block_left_open_at_the_end_is_malformed(self):
+        # With the Ethics section last, an unclosed second block would otherwise go unread.
+        start, end = EXAMPLE.index("## Ethics Checklist Status\n"), EXAMPLE.index("## TRACK Log\n")
+        ethics_last = EXAMPLE[:start] + EXAMPLE[end:] + "\n" + EXAMPLE[start:end]
+        self.assertEqual(check(ethics_last).problems, [])
+        result = check(ethics_last + "```yaml\nirb:\n  required: true\n  status: SUBMITTED\n")
+        self.assertEqual(rules(result), [(checker.V8, "## Ethics Checklist Status")])
+        self.assertIn("never closed", result.problems[0].detail)
 
     def test_yaml_that_does_not_parse_names_the_line(self):
         result = check(edit(EXAMPLE, '  - id: "1.2"\n', '  - id: "1.2"\n\t'))
@@ -319,6 +345,12 @@ class BlockTest(unittest.TestCase):
         cases = {
             "item status": ('- id: "2.2"\n    status: PASS', '- id: "2.2"\n    status: NEEDS_ACTION\n    status: PASS',
                             checker.V8, "## Ethics Checklist Status", "status"),
+            "item status from a merge": ('- id: "2.2"\n    status: PASS',
+                                         '- id: "2.2"\n    <<: {status: NEEDS_ACTION, status: PASS}',
+                                         checker.V8, "## Ethics Checklist Status", "status"),
+            "item status merged and written out": ('- id: "2.2"\n    status: PASS',
+                                                   '- id: "2.2"\n    <<: {status: NEEDS_ACTION}\n    status: PASS',
+                                                   checker.V8, "## Ethics Checklist Status", "status"),
             "irb block": ("irb:\n  required: true", "irb:\n  required: true\n  status: SUBMITTED\nirb:\n  required: true",
                           checker.V8, "## Ethics Checklist Status", "irb"),
             "frontmatter field": ("current_phase: TRACK", "current_phase: ETHICS\ncurrent_phase: TRACK",
@@ -333,10 +365,10 @@ class BlockTest(unittest.TestCase):
                 self.assertEqual(result.problems[0].detail,
                                  f'YAML does not parse: found duplicate key "{key}" (line {line})')
 
-    def test_repeated_key_check_leaves_merge_and_complex_keys_alone(self):
+    def test_merges_without_repeated_keys_and_complex_keys(self):
         merged = edit(EXAMPLE, "```yaml\nevents:\n", "```yaml\nflag: &flag {kind: agent_flag}\nevents:\n")
         merged = edit(merged, "  - ts: 2026-04-28T16:42:00+08:00\n    kind: agent_flag\n",
-                      "  - <<: *flag\n    ts: 2026-04-28T16:42:00+08:00\n    kind: agent_flag\n")
+                      "  - <<: *flag\n    ts: 2026-04-28T16:42:00+08:00\n")
         self.assertEqual(check(merged).problems, [])
         complex_key = check(edit(EXAMPLE, "```yaml\nevents:\n", "```yaml\n? [a, b]\n: x\nevents:\n"))
         self.assertEqual(rules(complex_key), [(checker.V9, "## TRACK Log")])
@@ -407,6 +439,12 @@ class DerivationTest(unittest.TestCase):
         self.assertEqual(status(approved_at("2026-04-12T06:30:00Z")), ("READY", ["none"]))
         self.assertEqual(status(approved_at("2026-04-12T06:30:01Z")), ("ETHICS_PENDING", [
             "not reconfirmed since IRB approval at 2026-04-12T06:30:01Z: 1.1"]))
+
+    def test_reconfirmation_compares_digits_past_microseconds(self):
+        text = edit(approved_at("2026-04-12T06:30:00.0000002Z"),
+                    "answered_at: 2026-04-12T14:30:00+08:00", "answered_at: 2026-04-12T06:30:00.0000001Z")
+        self.assertEqual(status(text), ("ETHICS_PENDING", [
+            "not reconfirmed since IRB approval at 2026-04-12T06:30:00.0000002Z: 1.1"]))
 
     def test_exemption_needs_no_reconfirmation(self):
         text = edit(approved_at("2026-04-20T09:00:00+08:00"), "status: APPROVED", "status: EXEMPT")

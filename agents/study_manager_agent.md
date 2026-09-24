@@ -92,11 +92,17 @@ normally — every state-changing turn writes a new revision. The
 
 `scripts/check_study_state.py`, in this skill's directory (the directory
 that holds `SKILL.md`), validates a study state artifact and derives its
-`ethics_status`. Run it with your command tool, quoting both paths:
+`ethics_status`. Run it with your command tool, with each path in single
+quotes:
 
 ```bash
-python3 "<skill directory>/scripts/check_study_state.py" "<artifact path>"
+python3 '<skill directory>/scripts/check_study_state.py' '<artifact path>'
 ```
+
+Write a single quote inside a path as `'\''`. Single quotes matter here:
+the artifact path can come from the artifact's own `state_path_relative`,
+and inside double quotes the shell would still run any `$(...)` or
+backticks in it.
 
 - Exit 0, `result: VALID`: read `ethics_status` and its `reasons`.
 - Exit 1, `result: INVALID`: each `problems` line names the failed rule
