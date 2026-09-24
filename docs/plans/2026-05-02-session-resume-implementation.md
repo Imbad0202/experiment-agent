@@ -20,7 +20,7 @@
 |------|--------|------------|
 | `references/study_state_protocol.md` | Create | Task 1 (canonical ID map + protocol rules + validation rules + prompt-injection guard + worked examples + PR 1 limitations) |
 | `templates/study_state.md` | Create | Task 2 (skeleton template, all sections present, frontmatter has all required fields) |
-| `templates/study_state.example.md` | Create | Task 3 (worked example artifact for a fictional HEEACT study, mid-TRACK phase, all sections populated) |
+| `templates/study_state.example.md` | Create | Task 3 (worked example artifact for a fictional study, mid-TRACK phase, all sections populated) |
 | `agents/study_manager_agent.md` | Modify | Tasks 4-8 (add PERSIST + RESUME paths, ethics derivation, write protocol, state-changing turn rule, prompt-injection guard) |
 | `SKILL.md` | Modify | Task 9 (routing line for resume + runtime dependency declaration) |
 | `ROADMAP.md` | Modify | Task 10 (mark v1.2.3 in progress) |
@@ -419,7 +419,7 @@ miss fields or invert ethics derivation.
 
 - [ ] **Step 2: Create `templates/study_state.example.md`**
 
-Use a fictional study (do NOT use real HEEACT data — public repo). Suggested fictional context: "Faculty perception of sustainable campus practices" survey at a fictional Pacific Rim university.
+Use a fictional study (do NOT use real institutional data — public repo). Suggested fictional context: "Faculty perception of sustainable campus practices" survey at a fictional Pacific Rim university.
 
 ```markdown
 ---

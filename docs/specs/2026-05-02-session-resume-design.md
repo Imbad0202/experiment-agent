@@ -38,7 +38,7 @@ These are explicitly out of scope for the first ship. PR 2 may revisit.
 - Reconciliation when artifact and user reports conflict
 - Recovery when the artifact is moved, renamed, or vanishes mid-session
 - Recovery when the artifact is edited externally between turns
-- Slug collision resolution (e.g., two studies want `heeact-survey`)
+- Slug collision resolution (e.g., two studies want `campus-survey`)
 - An explicit `ethics-upgrade` user command
 - Any sync mechanism, cross-machine path recommendation, or default location
   outside the working directory (this is a public skill — it must not encode
@@ -98,7 +98,7 @@ Markdown with YAML frontmatter. Same lineage as Material Passport and existing
 ```yaml
 ---
 schema_version: 1
-study_id: <user-provided slug, e.g. "heeact-2026-q2-survey">
+study_id: <user-provided slug, e.g. "campus-2026-q2-survey">
 study_title: <human-readable title>
 state_path_relative: <path to this file relative to the repo or workspace
   root if discoverable, else relative to cwd at write time. Canonical.>
