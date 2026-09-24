@@ -110,6 +110,17 @@ UNDERLINED = ("line %d is a line of '-' or '=' right under text, which can make 
               + HEADINGS_ONLY + " (leave a blank line above a rule, and use bold text for a label)")
 MISPLACED_FENCE = ("line %d starts a code block that is not at the first column; start ``` at the first "
                    "column, outside any list or quote")
+# GitHub keeps a fence's length in one byte, so it ends a longer fence at the first later line of 255 or more;
+# other readers read on past a line shorter than the fence.
+MAX_FENCE_LENGTH = 255
+LONG_FENCE = (f"line %d starts a code block with more than {MAX_FENCE_LENGTH} backticks or tildes, which "
+              "readers end at different lines; start a code block with ```")
+# markdown-it shows nothing below a list nested past its limit: ten lists with its CommonMark settings, fifty
+# with its default ones. Each list moves its text at least two columns, so text this many columns in is
+# malformed, two lists short of the lower limit.
+DEEP_COLUMN = 16
+DEEP_TEXT = (f"line %d starts its text {DEEP_COLUMN} or more columns in; some readers stop showing the rest "
+             "of a file at lists nested about that deep, so nest lists and quotes less deeply")
 
 
 class CannotRun(Exception):
@@ -136,7 +147,7 @@ class Section:
     yaml_blocks: list  # (first content line, text) of each yaml or yml block
     open_fence: int = None  # line of a code fence still open at the end of the file
     html: int = None  # first line with HTML
-    stray: str = None  # the first heading other than the four, or code block not at the first column
+    stray: str = None  # the first other heading, misplaced or overlong code fence, or text too deep
     other_code: str = None  # where the first code other than a yaml block is
 
 
@@ -393,8 +404,8 @@ def _has_html(text):
 def split_sections(body):
     """Read the body's layout: its sections, their yaml blocks, other code, and whatever could show a
     reader something other than what the checker reads (HTML, a heading other than the four section
-    headings, a code block not at the first column, a section heading inside a code block, an
-    unclosed fence)."""
+    headings, a code block not at the first column or with a fence over 255 characters, text 16 or more
+    columns in, a section heading inside a code block, an unclosed fence)."""
     sections, hidden = [Section(None, 0, [])], {}
     fence = fence_line = block = None
     after_text = False  # whether the line above is one that a line of - or = could underline
@@ -424,6 +435,8 @@ def split_sections(body):
         if opening:
             fence, info = opening
             fence_line = number
+            if len(fence) > MAX_FENCE_LENGTH:
+                section.stray = section.stray or LONG_FENCE % number
             if re.split(r"[ \t]", info, maxsplit=1)[0].lower() in ("yaml", "yml"):
                 block = []
             else:
@@ -436,9 +449,13 @@ def split_sections(body):
         if not section.html and _has_html(text):
             section.html = number
         # A tab reaches the next multiple of 4 columns, for a reader too, so tabs go before the markers.
-        stripped = _strip_containers(text.expandtabs(4))
+        expanded = text.expandtabs(4)
+        stripped = _strip_containers(expanded)
         if stripped.strip(" \t") and not misplaced and stripped.startswith("    "):
             section.other_code = section.other_code or f"line {number} is indented, which makes it code"
+        innermost = _strip_containers(expanded, ANY_CONTAINER_RE).lstrip(" ")
+        if innermost and len(expanded) - len(innermost) >= DEEP_COLUMN:
+            section.stray = section.stray or DEEP_TEXT % number
         # A heading a reader could see. Lists and quotes are not worked out, so a line of - or = right under
         # any line that is not blank counts, even where a reader sees a rule that ends a list or quote.
         if ATX_RE.match(content):
@@ -734,8 +751,8 @@ def check_artifact(text, roster):
             problems.append(Problem(V7, f"## {name}", detail))
     for section in layout.sections:
         if section.heading not in CHECKED_SECTIONS:
-            # HTML or a code block not at the first column can hide a section, and another heading can
-            # pass for one; the checked sections report these under their own rule.
+            # HTML, a misplaced or overlong code fence, or text too deep can hide a section, and another
+            # heading can pass for one; the checked sections report these under their own rule.
             if section.html:
                 problems.append(Problem(V7, "body", HTML_DETAIL % section.html))
             if section.stray:

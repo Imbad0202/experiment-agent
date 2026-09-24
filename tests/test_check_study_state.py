@@ -431,6 +431,44 @@ class StructureTest(unittest.TestCase):
                 self.assertFalse(result.valid)
                 self.assertIn((checker.V7, "## TRACK Log"), rules(result))
 
+    def test_code_fences_longer_than_255_characters_are_malformed(self):
+        # GitHub keeps a fence's length in one byte, so it ends a fence of 256 characters at the first later line of
+        # 255, where other readers and the checker read on. Here GitHub shows a blocking checklist and hides the real
+        # sections as code.
+        blocking = set_status(ETHICS_BLOCK, "2.2", "NEEDS_ACTION")
+        for char in "`~":
+            with self.subTest(char):
+                decoy = char * 256 + "\n" + char * 255 + "\n\n### Ethics Checklist Status\n\n" + blocking + "\n" + char * 256
+                result = check(edit(EXAMPLE, "**Design.**", decoy + "\n\n**Design.**"))
+                self.assertEqual(rules(result), [(checker.V7, "body")])
+                self.assertIn("more than 255", result.problems[0].detail)
+                at_the_limit = check(edit(EXAMPLE, "**Design.**", char * 255 + "\nnotes\n" + char * 255 + "\n\n**Design.**"))
+                self.assertEqual(at_the_limit.problems, [])
+
+    def test_text_nested_too_deep_is_malformed(self):
+        # markdown-it stops showing the file below a list nested past its limit (ten lists with its Python defaults,
+        # fifty in JavaScript), so a decoy above such a list could stand in for the sections the reader no longer shows.
+        # Text 16 or more columns in is malformed, two lists short of the lower limit.
+        blocking = set_status(ETHICS_BLOCK, "2.2", "NEEDS_ACTION")
+        cases = {
+            "one line": "- " * 50 + "x",
+            "an item per line": "\n".join("  " * level + "- item" for level in range(12)),
+            "empty items": "\n".join("  " * level + "*" for level in range(12)),
+            # Only the last line is deep, and only once the markers after its indent are removed too.
+            "an item per line, then five on one": "\n".join("  " * level + "- item" for level in range(5))
+            + "\n" + "  " * 5 + "- " * 5 + "x",
+            "after a decoy": "**Ethics Checklist Status**\n\n" + blocking + "\n" + "- " * 50 + "x",
+            "text at column 16": "- " * 8 + "x",
+        }
+        for name, lines in cases.items():
+            with self.subTest(name):
+                result = check(edit(EXAMPLE, "**Design.**", lines + "\n\n**Design.**"))
+                self.assertEqual(rules(result), [(checker.V7, "body")])
+                self.assertIn("columns", result.problems[0].detail)
+        for shallow in ("- " * 7 + "x", ">" * 15 + "x"):
+            with self.subTest(shallow=shallow):
+                self.assertEqual(check(edit(EXAMPLE, "**Design.**", shallow + "\n\n**Design.**")).problems, [])
+
     def test_long_lines_are_read_in_linear_time(self):
         nbsp, bom = chr(0xA0), chr(0xFEFF)
         lines = {
