@@ -236,6 +236,11 @@ class StructureTest(unittest.TestCase):
         ])
         self.assertEqual(result.problems[0].detail, '"2026-04-01T09:00:00" ' + checker.NOT_TIMESTAMP)
 
+    def test_a_key_named_like_a_checked_field_is_still_checked(self):
+        # Fields already checked as timestamps are skipped by their keys, not by the path the report shows.
+        text = edit(EXAMPLE, "revision: 23\n", "revision: 23\ntrack_summary.last_event_ts: 2026-09-25T00:00\n")
+        self.assertEqual(rules(check(text)), [(checker.V10, "frontmatter.track_summary.last_event_ts")])
+
     def test_missing_section(self):
         start, end = EXAMPLE.index("## TRACK Log\n"), EXAMPLE.index("## COLLECT Readiness")
         self.assertEqual(rules(check(EXAMPLE[:start] + EXAMPLE[end:])), [(checker.V7, "## TRACK Log")])
@@ -265,6 +270,38 @@ class StructureTest(unittest.TestCase):
                                                checker.V7, "body"),
             "tag with a form feed": ("## Protocol Summary\n",
                                      "## Protocol Summary\n\nText <details" + chr(12) + "> more\n", checker.V7, "body"),
+            # JavaScript readers, such as VS Code's preview, also take U+FEFF as a space in a tag.
+            "tag with U+FEFF": ("## Protocol Summary\n",
+                                "## Protocol Summary\n\nText <details" + chr(0xFEFF) + "> more\n", checker.V7, "body"),
+            # For a reader, an unquoted attribute value runs on through U+00A0, and through NUL, which it reads as
+            # U+FFFD.
+            "no-break space in a value": ("## Protocol Summary\n",
+                                          "## Protocol Summary\n\n<span title=x" + chr(0xA0) + "! hidden>\n",
+                                          checker.V7, "body"),
+            "NUL in a value": ("## Protocol Summary\n",
+                               "## Protocol Summary\n\n<span title=x" + chr(0) + "! hidden>\n", checker.V7, "body"),
+            # The CommonMark 0.31 text keeps a form feed or a vertical tab inside an unquoted value, where GitHub takes
+            # it as a space.
+            "form feed in a value": ("```yaml\nitems:", "<span title=x" + chr(12) + "! hidden>\n\n```yaml\nitems:",
+                                     checker.V8, "## Ethics Checklist Status"),
+            "closing tag with a vertical tab": ("## Protocol Summary\n",
+                                                "## Protocol Summary\n\nText </details" + chr(11) + "> more\n",
+                                                checker.V7, "body"),
+            # A block start counts anywhere on its line, so markers the checker does not know, such as a definition
+            # list's, cannot hide one; and `<!` of any kind counts, as some readers outside CommonMark take
+            # `<![cdata[` as markup.
+            "block start after a definition marker": ("## Protocol Summary\n",
+                                                      "## Protocol Summary\n\nTerm\n: <div \"\nhidden text\n",
+                                                      checker.V7, "body"),
+            "CDATA in lower case": ("## Protocol Summary\n", "## Protocol Summary\n\n<![cdata[ x ]]>\n",
+                                    checker.V7, "body"),
+            # A reader removes the quote markers, so a tag can run over quoted lines, and it keeps a list number that
+            # cannot start a list there.
+            "tag over two quoted lines": ("```yaml\nitems:", '> <span title=\n> "hidden">\n\n```yaml\nitems:',
+                                          checker.V8, "## Ethics Checklist Status"),
+            "tag over quoted lines, one with a number": ("```yaml\nitems:",
+                                                         '> x <span title=\n> 2. data-x="hidden">\n\n```yaml\nitems:',
+                                                         checker.V8, "## Ethics Checklist Status"),
         }
         for name, (old, new, rule, location) in cases.items():
             with self.subTest(name):
@@ -395,10 +432,22 @@ class StructureTest(unittest.TestCase):
                 self.assertIn((checker.V7, "## TRACK Log"), rules(result))
 
     def test_long_lines_are_read_in_linear_time(self):
-        # Removing quote markers by copying the rest of the line each time takes seconds on this line.
-        started = time.monotonic()
-        check(edit(EXAMPLE, "**Design.**", ">" * 800000 + "\n\n**Design.**"))
-        self.assertLess(time.monotonic() - started, 2)
+        nbsp, bom = chr(0xA0), chr(0xFEFF)
+        lines = {
+            # Removing quote markers by copying the rest of the line each time takes seconds on this line.
+            "quote markers": ">" * 800000,
+            # A tag pattern that takes whitespace such as U+00A0 both as a space and as part of an unquoted value takes
+            # seconds on these lines, and twice as long for each attribute added.
+            "run of U+00A0 after =": "<a b=" + nbsp * 1200,
+            "attributes with U+00A0": "<a" + (" b=x" + nbsp + "x") * 24,
+            "attributes with U+FEFF": "<a" + (" b=x" + bom + "x") * 24,
+            "values with U+00A0": "<a b=" + ("c" + nbsp) * 12000,
+        }
+        for name, line in lines.items():
+            with self.subTest(name):
+                started = time.monotonic()
+                check(edit(EXAMPLE, "**Design.**", line + "\n\n**Design.**"))
+                self.assertLess(time.monotonic() - started, 2)
 
     def test_repeated_yaml_aliases_are_checked_once(self):
         aliases = ['a0: &a0 ["x", "x", "x", "x", "x", "x", "x", "x", "x", "x"]']
@@ -550,6 +599,21 @@ class BlockTest(unittest.TestCase):
                 self.assertEqual(rules(result), [(rule, location)])
                 self.assertIn("merge key", result.problems[0].detail)
 
+    def test_yaml_directives_are_malformed(self):
+        # A %YAML or %TAG line changes how the rest is read. Python 3.9 also takes time that grows with the square of a
+        # long version number, and then reads the block that later versions reject.
+        cases = {
+            "version": "%YAML 1.1",
+            "long minor version": "%YAML 1." + "1" * 5000,
+            "long major version": "%YAML 1" + "0" * 5000 + ".1",
+            "tag handle": "%TAG !e! tag:example.org,2026:",
+        }
+        for name, directive in cases.items():
+            with self.subTest(name):
+                result = check(edit(EXAMPLE, "```yaml\nitems:", "```yaml\n" + directive + "\n---\nitems:"))
+                self.assertEqual(rules(result), [(checker.V8, "## Ethics Checklist Status")])
+                self.assertIn("directive", result.problems[0].detail)
+
     def test_tagged_values_are_malformed(self):
         # A tagged value would skip the checks that expect text, such as the timezone rule, or fail outside YAML.
         cases = {
@@ -632,6 +696,22 @@ class BlockTest(unittest.TestCase):
                     result = check(edit(EXAMPLE, old, new))
                     self.assertEqual(rules(result), [(rule, location)])
                     self.assertIn("U+%04X" % code, result.problems[0].detail)
+
+    def test_values_python_cannot_read_are_malformed(self):
+        # YAML reads these, but Python cannot build a character past U+10FFFF, and the error stopped the checker
+        # outside YAML's errors. The scanner reports it with its line.
+        for escape in ("U00110000", "UFFFFFFFF"):
+            cases = {
+                "frontmatter": ("current_phase: TRACK", 'current_phase: TRACK\nextra: "' + chr(92) + escape + '"',
+                                checker.V2, "frontmatter"),
+                "item": (NOTE, 'note: "' + chr(92) + escape + '"', checker.V8, "## Ethics Checklist Status"),
+            }
+            for name, (old, new, rule, location) in cases.items():
+                with self.subTest(name, escape=escape):
+                    result = check(edit(EXAMPLE, old, new))
+                    self.assertEqual(rules(result), [(rule, location)])
+                    self.assertIn("Python cannot read", result.problems[0].detail)
+                    self.assertIn("(line ", result.problems[0].detail)
 
     def test_complex_keys_fail_in_the_loader(self):
         complex_key = check(edit(EXAMPLE, "```yaml\nevents:\n", "```yaml\n? [a, b]\n: x\nevents:\n"))

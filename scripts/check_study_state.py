@@ -78,19 +78,30 @@ ANY_CONTAINER_RE = re.compile(r"[ \t]*" + CONTAINER_MARKER)
 ATX_RE = re.compile(r"#{1,6}(?:[ \t]|$)")
 UNDERLINE_RE = re.compile(r"(?:=+|-+)[ \t]*")
 TAG_NAME = r"[A-Za-z][A-Za-z0-9-]*"
-ATTRIBUTE = (r"\s+[A-Za-z_:][A-Za-z0-9_.:-]*"
-             r"""(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?""")
-# A tag anywhere, a comment, a processing instruction, a declaration, or CDATA. Whitespace in a tag is
-# any that a reader might take, a vertical tab or a form feed included.
-HTML_RE = re.compile(rf"<{TAG_NAME}(?:{ATTRIBUTE})*\s*/?>|</{TAG_NAME}\s*>"
-                     r"|<!--|<\?|<![A-Za-z]|<!\[CDATA\[")
-# A line that opens an HTML block before its tag is complete, once its markers and indentation are removed.
+# A space or a tab: every reader takes it as a space between a tag's parts and never as part of an unquoted
+# value, so the tag pattern matches each tag one way only and a long line takes linear time.
+TAG_SPACE_CHARS = r" \t"
+TAG_SPACE = f"[{TAG_SPACE_CHARS}]"
+ATTRIBUTE = (rf"{TAG_SPACE}+[A-Za-z_:][A-Za-z0-9_.:-]*"
+             rf"""(?:{TAG_SPACE}*={TAG_SPACE}*(?:[^{TAG_SPACE_CHARS}"'=<>`]+|'[^']*'|"[^"]*"))?""")
+TAG_BODY = rf"{TAG_NAME}(?:{ATTRIBUTE})*{TAG_SPACE}*"  # a tag's name, attributes and spaces
+# A tag, or `<!` or `<?`, which start a comment, a declaration, CDATA or a processing instruction.
+HTML_RE = re.compile(rf"<{TAG_BODY}/?>|</{TAG_NAME}{TAG_SPACE}*>|<!|<\?")
+# A tag still open at the end of a line: a reader can finish it on the next line, after any markers there.
+OPEN_TAG_RE = re.compile(rf"""</?{TAG_BODY}(?:={TAG_SPACE}*(?:"[^"]*|'[^']*)?)?$""")
+# Any other whitespace, such as a vertical tab, a form feed, U+001C to U+001F, U+00A0, U+3000 or U+FEFF: some
+# readers take it as a space in a tag, some as part of an unquoted value, some as neither. After a '<' or '</'
+# and a letter, any of it on the line counts as HTML, however the tag reads.
+TAG_START_RE = re.compile(r"</?[A-Za-z]")
+OTHER_SPACE_RE = re.compile(rf"(?!{TAG_SPACE})[\s\uFEFF]")
+# The start of an HTML block, before its tag is complete. It counts anywhere on the line, so no list, quote
+# or other container has to be worked out.
 HTML_BLOCK_RE = re.compile(
-    r"<(?:script|pre|style|textarea)(?:[\s>]|$)|</?(?:address|article|aside|base|basefont|"
+    rf"<(?:script|pre|style|textarea)(?:{TAG_SPACE}|>|$)|</?(?:address|article|aside|base|basefont|"
     r"blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|"
     r"figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|"
     r"menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|source|summary|table|tbody|td|"
-    r"tfoot|th|thead|title|tr|track|ul)(?:\s|/?>|$)", re.IGNORECASE)
+    rf"tfoot|th|thead|title|tr|track|ul)(?:{TAG_SPACE}|/?>|$)", re.IGNORECASE)
 HTML_DETAIL = "line %d has HTML, which can hide text from a reader; study state artifacts do not use HTML"
 HEADINGS_ONLY = "the only headings are " + ", ".join(f"'## {name}'" for name in SECTIONS)
 OTHER_HEADING = ("line %d makes a heading other than the four section headings; " + HEADINGS_ONLY
@@ -232,6 +243,22 @@ def _string_loader():
             self.heights[node] = 1 + max((self.heights[child] for child in children), default=0)
             return node
 
+        def fetch_directive(self):
+            # A %YAML or %TAG line changes how the rest is read, and Python's int() takes time that grows with
+            # the square of a long %YAML version number.
+            raise yaml.scanner.ScannerError(
+                None, None, "found a YAML directive (a line starting with %), which study state artifacts do "
+                "not use", self.get_mark())
+
+        def fetch_more_tokens(self):
+            # Some text that YAML scans names a value Python cannot build, such as an escape past U+10FFFF.
+            # That is the artifact's error; an error in the checker's own code still stops it (exit 2).
+            try:
+                super().fetch_more_tokens()
+            except (ValueError, OverflowError):
+                raise yaml.scanner.ScannerError(
+                    None, None, "found a value that Python cannot read", self.get_mark()) from None
+
         def construct_yaml_int(self, node):
             if len(node.value) > MAX_NUMBER_LENGTH:
                 raise yaml.constructor.ConstructorError(
@@ -352,14 +379,15 @@ def _strip_containers(text, markers=CONTAINER_RE):
         position = match.end()
 
 
-def _first_html(run):
-    """The first line with HTML in a run of (line number, text, content) outside code blocks, or None."""
-    lines = [number for number, _, content in run if HTML_BLOCK_RE.match(content)]
-    joined = "\n".join(text for _, text, _ in run)
-    match = HTML_RE.search(joined)  # a tag can span lines
-    if match:
-        lines.append(run[joined.count("\n", 0, match.start())][0])
-    return min(lines, default=None)
+def _has_html(text):
+    """True when a line outside code blocks could show a reader HTML: a tag, `<!` or `<?`, or the start of an
+    HTML block anywhere on it; a tag still open at its end; or a '<' or '</' and a letter followed on the line
+    by whitespace other than a space or a tab. The line is read alone and as written, so no marker on it or
+    on the next line can hide a tag."""
+    if HTML_RE.search(text) or HTML_BLOCK_RE.search(text) or OPEN_TAG_RE.search(text):
+        return True
+    start = TAG_START_RE.search(text)
+    return bool(start and OTHER_SPACE_RE.search(text, start.end()))
 
 
 def split_sections(body):
@@ -369,7 +397,6 @@ def split_sections(body):
     unclosed fence)."""
     sections, hidden = [Section(None, 0, [])], {}
     fence = fence_line = block = None
-    run = []  # lines outside code blocks since the last section heading or fence
     after_text = False  # whether the line above is one that a line of - or = could underline
     for number, text in body:
         section = sections[-1]
@@ -393,8 +420,7 @@ def split_sections(body):
         if misplaced:
             section.stray = section.stray or MISPLACED_FENCE % number
         if opening or starts_section:
-            section.html = section.html or _first_html(run)
-            run, after_text = [], False
+            after_text = False
         if opening:
             fence, info = opening
             fence_line = number
@@ -404,10 +430,11 @@ def split_sections(body):
                 section.other_code = (section.other_code
                                       or f"the code block on line {number} is not a yaml block")
             continue
-        run.append((number, text, content))
         if starts_section:
             sections.append(Section(heading, number, []))
             continue
+        if not section.html and _has_html(text):
+            section.html = number
         # A tab reaches the next multiple of 4 columns, for a reader too, so tabs go before the markers.
         stripped = _strip_containers(text.expandtabs(4))
         if stripped.strip(" \t") and not misplaced and stripped.startswith("    "):
@@ -421,7 +448,6 @@ def split_sections(body):
         after_text = bool(text.strip(" \t"))
     if fence:
         sections[-1].open_fence = fence_line
-    sections[-1].html = sections[-1].html or _first_html(run)
     return Layout(sections, hidden)
 
 
@@ -462,24 +488,27 @@ def _parse_yaml(text, first_line, not_mapping):
     return (data, None) if isinstance(data, dict) else (None, not_mapping)
 
 
-def _string_leaves(value, path, seen):
-    """Yield (path, text) for every string in value, visiting each container once."""
+def _string_leaves(value, path, seen, keys=()):
+    """Yield (path, keys, text) for every string in value, visiting each container once. keys holds the
+    keys and indexes that lead to the string; path shows them, and a key with a dot in it can make two
+    paths look alike."""
     if isinstance(value, str):
-        yield path, value
+        yield path, keys, value
     elif isinstance(value, (dict, list)) and id(value) not in seen:
         seen.add(id(value))  # YAML aliases can repeat one container many times
         if isinstance(value, dict):
             for key, child in value.items():
-                yield from _string_leaves(child, f"{path}.{key}", seen)
+                yield from _string_leaves(child, f"{path}.{key}", seen, keys + (key,))
         else:
             for index, child in enumerate(value):
-                yield from _string_leaves(child, f"{path}[{index}]", seen)
+                yield from _string_leaves(child, f"{path}[{index}]", seen, keys + (index,))
 
 
 def flag_bare_datetimes(value, path, problems, skip=()):
-    """V10 for other fields: a string that is just a date and a time has no offset."""
-    for where, text in _string_leaves(value, path, set()):
-        if where not in skip and BARE_DATETIME_RE.fullmatch(text):
+    """V10 for other fields: a string that is just a date and a time has no offset. skip holds the keys
+    that lead to fields already checked as timestamps."""
+    for where, keys, text in _string_leaves(value, path, set()):
+        if keys not in skip and BARE_DATETIME_RE.fullmatch(text):
             problems.append(Problem(V10, where, f"{_q(text)} is a date and time without an offset"))
 
 
@@ -525,8 +554,8 @@ def check_frontmatter(frontmatter, problems):
     summary = frontmatter.get("track_summary")
     if isinstance(summary, dict):
         _check_timestamp(summary.get("last_event_ts"), "frontmatter.track_summary.last_event_ts", problems)
-    flag_bare_datetimes(frontmatter, "frontmatter", problems, skip={
-        "frontmatter.created", "frontmatter.updated", "frontmatter.track_summary.last_event_ts"})
+    flag_bare_datetimes(frontmatter, "frontmatter", problems,
+                        skip={("created",), ("updated",), ("track_summary", "last_event_ts")})
 
 
 def _section_block(layout, name, rule, keys, problems):
@@ -587,7 +616,7 @@ def check_ethics(ethics, roster, problems):
             seen_ids.add(item_id)
         _check_choice(item.get("status"), V8, f"{where}.status", ITEM_STATUSES, problems)
         _check_timestamp(item.get("answered_at"), f"{where}.answered_at", problems)
-        flag_bare_datetimes(item, where, problems, skip={f"{where}.answered_at"})
+        flag_bare_datetimes(item, where, problems, skip={("answered_at",)})
     irb = ethics.get("irb")
     if not isinstance(irb, dict):
         problems.append(Problem(V8, "ethics.irb", "must be a mapping with required and status"))
@@ -598,7 +627,7 @@ def check_ethics(ethics, roster, problems):
             problems.append(Problem(V8, "ethics.irb.required", detail))
         _check_choice(irb.get("status"), V8, "ethics.irb.status", IRB_STATUSES, problems)
         _check_timestamp(irb.get("status_changed_at"), "ethics.irb.status_changed_at", problems)
-        flag_bare_datetimes(irb, "ethics.irb", problems, skip={"ethics.irb.status_changed_at"})
+        flag_bare_datetimes(irb, "ethics.irb", problems, skip={("status_changed_at",)})
     for key, value in ethics.items():
         if key not in ("items", "irb"):
             flag_bare_datetimes(value, f"ethics.{key}", problems)
@@ -620,7 +649,7 @@ def check_track(track, problems):
             problems.append(Problem(V9, f"{where}.ts", "is missing"))
         _check_timestamp(ts, f"{where}.ts", problems)
         _check_choice(event.get("kind"), V9, f"{where}.kind", EVENT_KINDS, problems)
-        flag_bare_datetimes(event, where, problems, skip={f"{where}.ts"})
+        flag_bare_datetimes(event, where, problems, skip={("ts",)})
     for key, value in track.items():
         if key != "events":
             flag_bare_datetimes(value, f"track.{key}", problems)

@@ -137,14 +137,22 @@ layout a reader might read either way is malformed.
   block. A line indented four or more columns once container markers
   (each after at most three spaces) are removed is code; a tab reaches
   the next multiple of four columns, as it does for a reader.
-- **HTML**: outside fenced code blocks, a tag (`<name …>` or `</name>`, as
-  CommonMark defines one, even across lines), `<!--`, `<?`, `<!` followed by
-  a letter, `<![CDATA[`, or a line that opens an HTML block before its tag
-  is complete (such as `<div`), also after container markers and
-  indentation at any depth. Whitespace in a tag is any character Python
-  counts as whitespace, so a vertical tab or a form feed, which GitHub
-  takes as a space there, counts too. A reader does not see HTML as
-  written, and some of it hides what follows.
+- **HTML**: outside fenced code blocks, each line is read alone and as
+  written, with no list, quote or other container worked out. A line has
+  HTML when it has, anywhere, a tag (`<name …>` or `</name>`, as CommonMark
+  defines one), `<!`, `<?`, or the start of an HTML block before its tag is
+  complete (such as `<div`); when it ends inside a tag that is still open
+  (such as `<span title=`), which a reader can finish on the next line
+  after any markers there; or when a `<` or `</` and a letter are followed
+  on the line by whitespace other than a space or a tab. Every reader takes
+  a space or a tab as the space between a tag's parts. Readers differ on
+  other whitespace (a vertical tab, a form feed, U+001C to U+001F, U+00A0,
+  U+3000, U+FEFF and more): GitHub takes a vertical tab as a space, the
+  CommonMark 0.31 text keeps it inside an unquoted value, and markdown-it
+  takes U+00A0 as either. So such whitespace after a `<` and a letter
+  makes the line HTML however the tag reads, and each tag pattern has one
+  reading, which keeps the check to linear time. A reader does not see
+  HTML as written, and some of it hides what follows.
 - **Other headings**: the four section headings are the body's only
   headings. Any other heading a reader could see is malformed: a line that,
   once container markers and indentation are removed at any depth, starts
@@ -159,11 +167,13 @@ layout a reader might read either way is malformed.
 - **Repeated keys**: a key that appears twice in one YAML mapping is a parse
   error (V2 in the frontmatter, V8 or V9 in a block). YAML does not allow
   it, and keeping either value could hide a blocking answer.
-- **Merge keys and tags**: a merge key (`<<`) or a tag (such as
-  `!!timestamp`, `!!int` or `!local`) is a parse error. A merge can bring in
-  a repeated key and can grow without limit; a tag builds a value that
-  skips the checks that expect text, or fails outside YAML's own errors.
-  The agent writes neither.
+- **Merge keys, tags and directives**: a merge key (`<<`), a tag (such as
+  `!!timestamp`, `!!int` or `!local`) or a directive (a `%YAML` or `%TAG`
+  line) is a parse error. A merge can bring in a repeated key and can grow
+  without limit; a tag builds a value that skips the checks that expect
+  text, or fails outside YAML's own errors; a directive changes how the
+  rest is read, and Python takes time that grows with the square of a long
+  `%YAML` version number. The agent writes none of them.
 - **Size limits**: an integer written with more than 100 characters, or
   values nested more than 100 levels deep, directly or through aliases
   (an alias inside the value it names nests without end), is a parse
@@ -172,6 +182,10 @@ layout a reader might read either way is malformed.
   comes near either limit.
 - **Malformed numbers**: a value that YAML 1.1 reads as a number but that
   has no digits, such as `0b_` or `0x_`, is a parse error.
+- **Values Python cannot read**: a value that YAML scans but Python cannot
+  build, such as a double-quoted escape for a code point past U+10FFFF
+  (`\U00110000`), is a parse error that names its line. An error in the
+  checker's own code still stops it (exit 2).
 - **Line separators**: NEL (U+0085), LINE SEPARATOR (U+2028) or
   PARAGRAPH SEPARATOR (U+2029) in the frontmatter or a checked yaml block
   is a parse error. YAML ends a line at them and a Markdown reader does
@@ -426,7 +440,7 @@ follow the shipped files. Tests run on Python 3.9 and on a current Python 3.
 | `## Ethics Checklist Status` appears twice | INVALID, V8 |
 | `## TRACK Log` removed | INVALID, V7 |
 | Event `kind: note` | INVALID, V9 |
-| HTML in a checked section; HTML elsewhere in the body, also a `<script` line in a nested list item or a footnote, a `<script` followed by a vertical tab, or a tag with a form feed before `>`; the blank template's `<…>` placeholders | INVALID, V8 or V9; INVALID, V7 at `body`; VALID |
+| HTML in a checked section, also a tag over two quoted lines (also when the second starts `2.`) or a form feed inside an unquoted value; HTML elsewhere in the body, also a `<script` line in a nested list item or a footnote, a `<script` followed by a vertical tab, a tag with a form feed or U+FEFF before `>`, a closing tag with a vertical tab, an unquoted attribute value with U+00A0 or NUL in it, a block start after a definition-list marker, or `<![cdata[`; the blank template's `<…>` placeholders | INVALID, V8 or V9; INVALID, V7 at `body`; VALID |
 | In a checked section: its heading indented, with a tab, closing `#`s, two spaces, another level, an invisible character, a combining mark inside a word, a look-alike letter, a link, in a block quote, or underlined (also with a single `-`, after an indented line, over two lines, after a line starting `2)`, or after a line with only markers such as `2. >`); a sub-heading | INVALID, V8 or V9 |
 | Elsewhere in the body: a title before the first section, a sub-heading, a heading inside a list item or a list nested four spaces deep, a section name underlined after an indented line, over two lines, after a digit from another script (U+0661), or after a line with only an indented `>`; a heading in a footnote; a line of `-` right under a list item or a quote | INVALID, V7 at `body` |
 | `#pilot` (also in a nested list item), `\# text`, `---` after a blank line, `- - -` after text, a footnote with text | Text; no problem |
@@ -439,6 +453,10 @@ follow the shipped files. Tests run on Python 3.9 and on a current Python 3.
 | An integer of 5,000 digits, also in base 60; values nested 500 levels deep, or 150 levels through aliases | INVALID, parse error |
 | `0b_`, `0x_` or `-0b_` as a value, in the frontmatter or a checked block | INVALID, parse error |
 | U+0085, U+2028 or U+2029 in the frontmatter or a checked block | INVALID, parse error |
+| `\U00110000` or `\UFFFFFFFF` in a double-quoted value, in the frontmatter or a checked block | INVALID, parse error naming the line |
+| A `%YAML` or `%TAG` directive in a checked block, also with a version number of 5,000 digits | INVALID, parse error |
+| A line of about 24,000 characters: a tag with runs of U+00A0 or U+FEFF in or between its attribute values | Checked in under 2 seconds |
+| A frontmatter key named `track_summary.last_event_ts` whose value has no offset | INVALID, V10 |
 | `=` as a key or a value | A string |
 | No frontmatter delimiter; a delimiter with a space, a tab, a no-break space or an ideographic space after `---` | INVALID, V1 |
 | `--now`, with and without PyYAML | Exit 0; one date-time with offset, within a minute of the test's clock |
@@ -469,7 +487,15 @@ recruitment must stop.
   HTML or a misplaced fence; and a line of `-` or `=` right under a line
   that is not blank, also where a reader sees a rule (under a list item, a
   quote, a line with only `>`, or another rule), which counts as an
-  underline (a blank line above a rule avoids it).
+  underline (a blank line above a rule avoids it). Because each line is read
+  alone and as written, these count as HTML even where a reader sees no
+  tag: a `<` and a letter followed to the end of the line only by what
+  could still be inside a tag (words, spaces, `=`, quoted text), such as
+  `n<N in both groups`; a `<` and a letter followed on the line by any
+  whitespace other than a space or a tab (such as U+00A0 or U+3000); a
+  block tag name after `<` anywhere on a line, such as `x <p = .05`; and
+  `<!` or `<?` anywhere. PERSIST step 3 already asks the agent for no `<`
+  followed by a letter, `/`, `!` or `?` in the body.
 - Derived status can become stricter for v1.1.0 artifacts (missing answer
   times, reconfirmation not done after approval). For a study already in
   TRACK, the agent then says recruitment must stop until the listed items are
@@ -510,3 +536,4 @@ recruitment must stop.
 | 2026-09-25 | Headings, HTML and code fences are found after removing list and quote markers and indentation at any depth, and a line of `-` or `=` right under any line that is not blank, other than a section heading or a code fence line, is an underline; lists and quotes are not worked out | The fourth review round found a heading and an HTML block in a list nested four spaces deep, and a digit from another script that the list model read as a list marker. Each round of modelling lists and quotes more closely had left another layout. Applies the user's strict-layout choices; the cost is that a few layouts a reader shows as rules or code are rejected |
 | 2026-09-25 | Nesting counts through aliases; numbers without digits and the line separators U+0085, U+2028 and U+2029 are parse errors | An alias chain or `0b_` made the checker exit 2, and YAML ends a line at those separators where a reader does not |
 | 2026-09-25 | A footnote label is a container marker; a line with only markers is not blank; a tab after a marker reaches the next multiple of four columns; whitespace in a tag is any Python whitespace | The review of the round-4 changes found a heading let through by a line with only `>` or `2. >` above its underline, a heading, HTML block or code fence inside a GitHub footnote, indented code after `>` and a tab in a checked section, and `<script` or `<details` followed by a vertical tab or a form feed, which readers take as HTML |
+| 2026-09-25 | Each line outside code is read alone for HTML: a tag, `<!`, `<?` or an HTML block start anywhere, a tag still open at the end of the line, or a `<` or `</` and a letter followed on the line by whitespace other than a space or a tab; YAML directives are parse errors, and a value Python cannot build is a scanner error with its line; fields already checked as timestamps are skipped by their keys | The fifth review round found a tag over two quoted lines and a U+00A0 in an unquoted value, both passing as VALID/READY; an escape past U+10FFFF made the checker exit 2; a frontmatter key with a dot in its name matched a checked field's path and skipped V10. The cleanup reviews of the first fixes found that its tag pattern took exponential time on runs of U+00A0, that joining lines missed a tag whose second quoted line starts `2.`, that readers following the current CommonMark text keep a vertical tab or a form feed inside an unquoted value, and that a long `%YAML` version number is slow on Python 3.9 and read differently by 3.9 and 3.11. Reading each line alone needs no model of lists and quotes, and taking only a space or a tab as a tag space gives each tag pattern one reading; the cost is that some lines where a reader sees no tag are INVALID (§ Compatibility and risk) |
