@@ -14,7 +14,7 @@ Scan user-provided output for these patterns:
 - Coefficients: `beta = 0.23`, `B = 1.45`, `SE = 0.12`
 
 If structured format (CSV/JSON): auto-extract column names matching these patterns.
-If unstructured: ask user to highlight key numbers.
+If unstructured (console output, PDF or Word tables, screenshots): extract the values yourself, list each one with where it came from, and have the user confirm the list before interpreting. If the output holds many results, also ask which ones are primary.
 
 ### Step 2: Interpret Each Finding
 

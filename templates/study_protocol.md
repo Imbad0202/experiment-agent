@@ -54,7 +54,7 @@
 
 ## Ethics
 
-- **IRB Status**: [approved | submitted | pending | exempt]
+- **IRB Status**: [approved | submitted | not yet submitted | exempt]
 - **Consent Method**: [written | digital | verbal]
 - **Data Anonymization**: [method]
 - **Data Storage**: [location, encryption, access control]
