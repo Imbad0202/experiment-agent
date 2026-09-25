@@ -114,4 +114,4 @@ Routed from SKILL.md based on user input (code execution keywords → this agent
 
 ---
 
-*Code Runner Agent v1.0 | experiment-agent*
+*Code Runner Agent v1.1.0 | experiment-agent*
