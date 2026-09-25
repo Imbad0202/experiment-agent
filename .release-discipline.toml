@@ -1,0 +1,54 @@
+# Release-doc alignment, checked by tools/release-discipline on every push,
+# pull request and v* tag (.github/workflows/release-discipline.yml).
+# The [[package]] entries read three versions that must agree: SKILL.md's
+# frontmatter, the project CLAUDE.md's Version line, and the CHANGELOG entry
+# directly under its title. On a v* tag they must also equal the tag. Each
+# [[file]] entry is text that file must contain with that version; {date} is
+# the date of that version's CHANGELOG entry, so dates change only at a
+# release. The template names come from the toolkit: here they hold version
+# lines, not only badges and URLs, and "\n" pins a line's start or end.
+
+changelog_path = "CHANGELOG.md"
+changelog_entry_pattern = '^## v(?P<version>\S+) \((?P<date>\d{4}-\d{2}-\d{2})\)$'
+
+[[file]]
+path = "README.md"
+badge_template = "badge/version-v{version}-blue"
+
+[[file]]
+path = "README.zh-TW.md"
+badge_template = "badge/version-v{version}-blue"
+
+[[file]]
+path = "SKILL.md"
+badge_template = "\n# Experiment Agent v{version} —"
+last_updated_template = "\n*Experiment Agent v{version} | {date} |"
+tag_url_template = "\n  last_updated: \"{date}\"\n"
+
+[[file]]
+path = ".claude/CLAUDE.md"
+badge_template = "\n| `experiment-agent` v{version} |"
+last_updated_template = "\n- **Last Updated**: {date}\n"
+
+[[file]]
+path = "agents/study_manager_agent.md"
+badge_template = "\n*Study Manager Agent v{version} | experiment-agent*"
+
+[[file]]
+path = "agents/code_runner_agent.md"
+badge_template = "\n*Code Runner Agent v{version} | experiment-agent*"
+
+[[package]]
+path = "SKILL.md"
+type = "regex"
+pattern = '^  version: "(?P<version>[^"]+)"$'
+
+[[package]]
+path = ".claude/CLAUDE.md"
+type = "regex"
+pattern = '^- \*\*Version\*\*: (?P<version>\S+)$'
+
+[[package]]
+path = "CHANGELOG.md"
+type = "regex"
+pattern = '\A# Changelog\n\n## v(?P<version>\S+) \('
