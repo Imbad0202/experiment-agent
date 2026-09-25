@@ -117,15 +117,15 @@ The guarantee that a reader shows what the checker reads covers three
 **covered readers**: GitHub's file view, VS Code's preview (checked
 against its 1.132 source, its frontmatter and math rules included), and
 markdown-it in JavaScript and Python with its front-matter and footnote
-plugins. VS Code's preview is covered except for inline math (`$...$`):
-it draws formulas with KaTeX and no size limit, so a formula in a file
-built for it could be drawn over another section, such as a fake
-checklist over the real Ethics Checklist Status, while the checker reads
-the text beneath. The agent reads the raw text and is not affected; a
-person reading the preview could be. This was found in KaTeX's settings
-and style sheet in VS Code's bundle, not by rendering a file. All three
-follow the CommonMark 0.31 text; how GitHub finds frontmatter was not
-checked. Other readers are outside the guarantee:
+plugins. All three follow the CommonMark 0.31 text; how GitHub finds
+frontmatter was not checked. VS Code's preview is covered except for
+inline math (`$...$`): it draws formulas with KaTeX and no size limit,
+so a formula in a file built for it could be drawn over another section,
+such as a fake checklist over the real Ethics Checklist Status, while
+the checker reads the text beneath. The agent reads the raw text and is
+not affected; a person reading the preview could be. This was found in
+KaTeX's settings and style sheet in VS Code's bundle, not by rendering a
+file. Other readers are outside the guarantee:
 Jekyll and other site generators, gray-matter, Obsidian, and Markdown
 extensions. A rule that also matches one of them at no cost stays, as
 the frontmatter-end and lone CR rules do for Jekyll and gray-matter, but
