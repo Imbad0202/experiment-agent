@@ -54,6 +54,8 @@ by instruction.
 - Changes to `run`, `validate`, or `plan` modes.
 - Repairing invalid artifacts. Schema changes (`schema_version` stays `1`).
 - A CI job. Tests run locally.
+- Guaranteeing what readers other than the three covered readers (see
+  Parsing) show.
 - Version bump, CHANGELOG entry, and release: done at release time, on
   request.
 
@@ -110,6 +112,17 @@ layout a reader might read either way is malformed. In the body, five of
 the rules below name **layout problems**: HTML, other headings, a code
 fence not at the first column or of more than 255 backticks or tildes,
 deep lines, and math blocks.
+
+The guarantee that a reader shows what the checker reads covers three
+**covered readers**: GitHub's file view, VS Code's preview (checked
+against its 1.132 source, its frontmatter and math rules included), and
+markdown-it in JavaScript and Python with its front-matter and footnote
+plugins. All three follow the CommonMark 0.31 text; how GitHub finds
+frontmatter was not checked. Other readers are outside the guarantee:
+Jekyll and other site generators, gray-matter, Obsidian, and Markdown
+extensions. A rule that also matches one of them at no cost stays, as
+the frontmatter-end and lone CR rules do for Jekyll and gray-matter, but
+a file built to show such a reader something else is out of scope.
 
 - **Lines** end at CRLF, CR, or LF, except up to the end of the closing
   frontmatter line, where they end only at CRLF or LF (see Frontmatter).
@@ -606,3 +619,4 @@ recruitment must stop.
 | 2026-09-25 | A body line starting `$$` is malformed | The security review of round 7 noted VS Code's math blocks as a possible reader difference; VS Code's 1.132 source shows that its preview, with math on by default, reads a line starting `$$` as a math block that runs to a line with `$$` in it or to the end of the file. The agent writes no math; applies the strict-layout choice |
 | 2026-09-25 | A byte order mark at the start of the file is malformed, reversing "after an optional byte order mark" | The eighth review round found that markdown-it-front-matter does not skip a byte order mark, so it shows the whole frontmatter as body text: a decoy checklist and `<!--` in a YAML string showed a blocking checklist and hid the real sections, while the checker, which dropped the mark, reported READY. The agent writes no byte order mark |
 | 2026-09-25 | A lone CR ending a line up to the closing `---` is malformed, and the command-line checker reads the file's bytes | The ninth review round found that Jekyll finds the frontmatter by LF alone (its 4.4.1 rule, run here in Ruby): with a lone CR after the opening or the closing `---`, it finds no frontmatter and shows the frontmatter as body text, where a decoy checklist and `<!--` in a YAML string showed a blocking checklist and hid the real sections, while the checker, whose command line had turned the CR into LF, reported READY. In the body, Markdown readers end a line at a lone CR as the checker does, so it stays a line ending there. The agent writes LF |
+| 2026-09-25 | The guarantee that a reader shows what the checker reads covers GitHub's file view, VS Code's preview and markdown-it; other readers are outside it | After nine review rounds, the later ones each finding another reader's quirk, the user chose to name the covered readers and finish. Rules that also match Jekyll or gray-matter stay, since they cost nothing |
