@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 import unittest
 from pathlib import Path
@@ -47,6 +48,18 @@ def edit(text, old, new):
 def set_status(text, item_id, status):
     """Change the status of an item that is PASS in the shipped example."""
     return edit(text, f'- id: "{item_id}"\n    status: PASS', f'- id: "{item_id}"\n    status: {status}')
+
+
+# Decoys: a blocking checklist that a layout trick could show a reader in place of the real sections.
+BLOCKING = set_status(ETHICS_BLOCK, "2.2", "NEEDS_ACTION")
+BODY_DECOY = "**Ethics Checklist Status**\n\n" + BLOCKING + "\n"
+# A YAML string holding the decoy and "<!--", for a reader that shows the frontmatter as body text.
+FRONTMATTER_DECOY = "notes: |\n" + textwrap.indent("## Ethics Checklist Status\n\n" + BLOCKING + "\n\n<!--\n", "  ")
+
+
+def with_frontmatter(lines):
+    """The example with lines added to its frontmatter, after schema_version."""
+    return edit(EXAMPLE, "schema_version: 1\n", "schema_version: 1\n" + lines)
 
 
 def new_study():
@@ -173,23 +186,34 @@ class StructureTest(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(check(text).problems, [])
 
-    def test_line_endings(self):
-        for name, text in (("CRLF", EXAMPLE.replace("\n", "\r\n")), ("CR", EXAMPLE.replace("\n", "\r"))):
-            with self.subTest(name):
-                self.assertEqual(check(text).problems, [])
-
     def test_byte_order_mark_is_malformed(self):
         # markdown-it's front-matter plugins do not skip a byte order mark, so they show the whole frontmatter as
         # body text, where a YAML string could hold a decoy checklist and "<!--" that hides the real sections.
-        blocking = set_status(ETHICS_BLOCK, "2.2", "NEEDS_ACTION")
-        decoy = "notes: |\n" + "\n".join("  " + line if line else "" for line in
-                                          ["## Ethics Checklist Status", "", *blocking.split("\n"), "", "<!--"]) + "\n"
-        for name, text in (("plain", "\ufeff" + EXAMPLE),
-                           ("decoy", "\ufeff" + EXAMPLE.replace("schema_version: 1\n", "schema_version: 1\n" + decoy, 1))):
+        for name, text in (("plain", "\ufeff" + EXAMPLE), ("decoy", "\ufeff" + with_frontmatter(FRONTMATTER_DECOY))):
             with self.subTest(name):
                 result = check(text)
                 self.assertEqual(rules(result), [(checker.V1, "frontmatter")])
                 self.assertIn("byte order mark", result.problems[0].detail)
+
+    def test_lone_carriage_returns_before_the_body_are_malformed(self):
+        # Jekyll ends a frontmatter line only at LF (in CRLF, it takes the CR as a trailing space), so at a lone CR it
+        # finds no frontmatter, or a later end, and shows the frontmatter as body text, where a YAML string could
+        # hold a decoy checklist and "<!--" that hides the real sections.
+        closing = "---\n\n## Protocol Summary"
+        decoyed = with_frontmatter(FRONTMATTER_DECOY)
+        cases = {"CR only": EXAMPLE.replace("\n", "\r"),
+                 "after the opening line": "---\r" + EXAMPLE[len("---\n"):],
+                 "in the frontmatter": edit(EXAMPLE, "schema_version: 1\n", "schema_version: 1\r"),
+                 "after the closing line": edit(EXAMPLE, closing, "---\r## Protocol Summary"),
+                 "after the closing line, with a decoy": edit(decoyed, closing, "---\r## Protocol Summary")}
+        lines = {"CR only": 1, "after the opening line": 1, "in the frontmatter": 2,
+                 "after the closing line": EXAMPLE[:EXAMPLE.index(closing)].count("\n") + 1,
+                 "after the closing line, with a decoy": decoyed[:decoyed.index(closing)].count("\n") + 1}
+        for name, text in cases.items():
+            with self.subTest(name):
+                result = check(text)
+                self.assertEqual(rules(result), [(checker.V1, "frontmatter")])
+                self.assertIn(f"line {lines[name]} ends with a carriage return", result.problems[0].detail)
 
     def test_frontmatter_delimiters(self):
         self.assertEqual(rules(check(EXAMPLE[len("---\n"):])), [(checker.V1, "frontmatter")])
@@ -209,10 +233,8 @@ class StructureTest(unittest.TestCase):
         # markdown-it-front-matter ends the frontmatter at a line of three or more "-" indented up to three spaces,
         # or at "..." however indented; Jekyll at "..." with spaces after it; gray-matter at any line starting "---".
         # Inside a YAML string such a line is text to the checker, so a reader could show what follows as the body.
-        blocking = set_status(ETHICS_BLOCK, "2.2", "NEEDS_ACTION")
-        decoy = "notes: |\n  ---\n  ## Ethics Checklist Status\n\n" + "\n".join(
-            "  " + line if line else "" for line in blocking.split("\n")) + "\n  <!--\n"
-        text = EXAMPLE.replace("schema_version: 1\n", "schema_version: 1\n" + decoy, 1) + "-->\n"
+        decoy = "notes: |\n" + textwrap.indent("---\n## Ethics Checklist Status\n\n" + BLOCKING + "\n<!--\n", "  ")
+        text = with_frontmatter(decoy) + "-->\n"
         result = check(text)
         self.assertEqual(rules(result), [(checker.V1, "frontmatter")])
         self.assertIn("line 4 ", result.problems[0].detail)
@@ -221,13 +243,12 @@ class StructureTest(unittest.TestCase):
                 "text after": 'notes: "text\n---x\n  more"'}
         for name, lines in ends.items():
             with self.subTest(name):
-                result = check(EXAMPLE.replace("schema_version: 1\n", "schema_version: 1\n" + lines + "\n", 1))
+                result = check(with_frontmatter(lines + "\n"))
                 self.assertEqual(rules(result), [(checker.V1, "frontmatter")])
         # Indented four spaces, a line of "-" is code to markdown-it and does not start the line for the others.
         for lines in ("notes: |\n    text\n    ---\n    more", "notes: |\n  ...and more"):
             with self.subTest(lines):
-                self.assertEqual(check(EXAMPLE.replace("schema_version: 1\n", "schema_version: 1\n" + lines + "\n",
-                                                       1)).problems, [])
+                self.assertEqual(check(with_frontmatter(lines + "\n")).problems, [])
 
     def test_frontmatter_must_parse_as_a_mapping(self):
         result = check(edit(EXAMPLE, "revision: 23", "revision: [23"))
@@ -471,21 +492,20 @@ class StructureTest(unittest.TestCase):
         # GitHub keeps a fence's length in one byte, so it ends a fence of 256 characters at the first later line of
         # 255, where other readers and the checker read on. Here GitHub shows a blocking checklist and hides the real
         # sections as code.
-        blocking = set_status(ETHICS_BLOCK, "2.2", "NEEDS_ACTION")
         for char in "`~":
             with self.subTest(char):
-                decoy = char * 256 + "\n" + char * 255 + "\n\n### Ethics Checklist Status\n\n" + blocking + "\n" + char * 256
+                decoy = char * 256 + "\n" + char * 255 + "\n\n### Ethics Checklist Status\n\n" + BLOCKING + "\n" + char * 256
                 result = check(edit(EXAMPLE, "**Design.**", decoy + "\n\n**Design.**"))
                 self.assertEqual(rules(result), [(checker.V7, "body")])
                 self.assertIn("more than 255", result.problems[0].detail)
                 at_the_limit = check(edit(EXAMPLE, "**Design.**", char * 255 + "\nnotes\n" + char * 255 + "\n\n**Design.**"))
                 self.assertEqual(at_the_limit.problems, [])
 
-    def test_text_nested_too_deep_is_malformed(self):
+    def test_lines_nested_too_deep_are_malformed(self):
         # markdown-it stops showing the file below a list nested past its limit (ten lists with its Python defaults,
         # fifty in JavaScript), so a decoy above such a list could stand in for the sections the reader no longer shows.
-        # Text 16 or more columns in is malformed, two lists short of the lower limit.
-        blocking = set_status(ETHICS_BLOCK, "2.2", "NEEDS_ACTION")
+        # A line whose markers and indentation take 16 or more columns is malformed, two lists short of the lower
+        # limit.
         cases = {
             "one line": "- " * 50 + "x",
             "an item per line": "\n".join("  " * level + "- item" for level in range(12)),
@@ -493,10 +513,10 @@ class StructureTest(unittest.TestCase):
             # Only the last line is deep, and only once the markers after its indent are removed too.
             "an item per line, then five on one": "\n".join("  " * level + "- item" for level in range(5))
             + "\n" + "  " * 5 + "- " * 5 + "x",
-            "after a decoy": "**Ethics Checklist Status**\n\n" + blocking + "\n" + "- " * 50 + "x",
+            "after a decoy": BODY_DECOY + "- " * 50 + "x",
             # A line with only markers opens the lists too, however deep.
             "only markers": "- " * 10 + ">",
-            "only markers, after a decoy": "**Ethics Checklist Status**\n\n" + blocking + "\n" + "- " * 50 + ">",
+            "only markers, after a decoy": BODY_DECOY + "- " * 50 + ">",
             "text at column 16": "- " * 8 + "x",
         }
         for name, lines in cases.items():
@@ -511,10 +531,9 @@ class StructureTest(unittest.TestCase):
     def test_math_blocks_are_malformed(self):
         # VS Code's preview reads a line starting "$$" as a math block that takes the lines below it up to one with
         # "$$" in it, or to the end of the file, so the sections below a decoy would no longer show as sections.
-        blocking = set_status(ETHICS_BLOCK, "2.2", "NEEDS_ACTION")
         for line in ("$$", "$$ x $$ y", "- $$", "> $$", "   $$", "$$n = 100$$"):
             with self.subTest(line):
-                decoy = "**Ethics Checklist Status**\n\n" + blocking + "\n" + line
+                decoy = BODY_DECOY + line
                 result = check(edit(EXAMPLE, "**Design.**", decoy + "\n\n**Design.**"))
                 self.assertEqual(rules(result), [(checker.V7, "body")])
                 self.assertIn("math block", result.problems[0].detail)
@@ -828,7 +847,9 @@ class DerivationTest(unittest.TestCase):
         self.assertEqual(status(EXAMPLE), ("READY", ["none"]))
 
     def test_line_endings_do_not_change_the_result(self):
-        for name, text in (("CRLF", EXAMPLE.replace("\n", "\r\n")), ("CR", EXAMPLE.replace("\n", "\r"))):
+        # In the body a lone CR ends a line, as it does for any Markdown reader.
+        body_cr = edit(EXAMPLE, "## Protocol Summary\n\n", "## Protocol Summary\r\r")
+        for name, text in (("CRLF", EXAMPLE.replace("\n", "\r\n")), ("CR in the body", body_cr)):
             with self.subTest(name):
                 self.assertEqual(status(text), ("READY", ["none"]))
 
@@ -1025,6 +1046,18 @@ class CliTest(unittest.TestCase):
             done = run_checker(write_file(tmp, set_status(EXAMPLE, "2.2", "OK")))
         self.assertEqual(done.returncode, 1)
         self.assertIn("result: INVALID", done.stdout)
+
+    def test_the_file_is_read_with_its_line_endings(self):
+        # Read as text, a lone CR would become LF before the checker could see it.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.md"
+            path.write_bytes(edit(EXAMPLE, "---\n\n## Protocol Summary", "---\r## Protocol Summary").encode("utf-8"))
+            lone = run_checker(path)
+            path.write_bytes(EXAMPLE.replace("\n", "\r\n").encode("utf-8"))
+            crlf = run_checker(path)
+        self.assertEqual(lone.returncode, 1, lone.stdout + lone.stderr)
+        self.assertIn("carriage return", lone.stdout)
+        self.assertEqual(crlf.returncode, 0, crlf.stdout + crlf.stderr)
 
     def test_cannot_run_exits_2(self):
         with tempfile.TemporaryDirectory() as tmp:

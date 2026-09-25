@@ -65,6 +65,9 @@ LINE_BREAK_RE = re.compile(r"[\x00-\x1f\x7f\x85\u2028\u2029]")
 # Markdown layout, read as CommonMark does wherever a difference could show a reader
 # something other than what the checker reads.
 LINE_END_RE = re.compile(r"\r\n|\r|\n")
+# A CR not followed by LF. Jekyll ends a frontmatter line only at LF, and takes the CR of CRLF as a trailing
+# space.
+LONE_CR_RE = re.compile(r"\r(?!\n)")
 # A frontmatter line that some reader takes as the end of the frontmatter: one starting "---" (gray-matter),
 # three or more "-" alone after at most three spaces (markdown-it-front-matter), or "..." alone however
 # indented (markdown-it-front-matter, and Jekyll with spaces after it).
@@ -106,6 +109,17 @@ HTML_BLOCK_RE = re.compile(
     r"figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|"
     r"menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|source|summary|table|tbody|td|"
     rf"tfoot|th|thead|title|tr|track|ul)(?:{TAG_SPACE}|/?>|$)", re.IGNORECASE)
+NO_FRONTMATTER = ("the file must start with a line that is exactly '---' and close the frontmatter with "
+                  "another such line")
+# markdown-it's front-matter plugins do not skip a byte order mark, and then show the whole frontmatter as
+# text.
+BYTE_ORDER_MARK = ("the file starts with a byte order mark (U+FEFF), which some readers do not skip before "
+                   "the frontmatter; save the file as UTF-8 without it")
+LONE_CR = ("line %d ends with a carriage return (CR) alone, where some readers do not end a line, so they "
+           "would not find the frontmatter where the checker does; save the file with LF or CRLF line "
+           "endings")
+EARLY_END = ("line %d could end the frontmatter for some readers; before the closing '---', no line may "
+             "start with '---' or hold only '-' characters or '...'")
 HTML_DETAIL = "line %d has HTML, which can hide text from a reader; study state artifacts do not use HTML"
 HEADINGS_ONLY = "the only headings are " + ", ".join(f"'## {name}'" for name in SECTIONS)
 OTHER_HEADING = ("line %d makes a heading other than the four section headings; " + HEADINGS_ONLY
@@ -123,7 +137,7 @@ LONG_FENCE = (f"line %d starts a code block with more than {MAX_FENCE_LENGTH} ba
 # with its default ones. Each list takes at least two columns, so a line whose markers and indentation take
 # this many columns is malformed, two lists short of the lower limit.
 DEEP_COLUMN = 16
-DEEP_TEXT = (f"line %d has list, quote or footnote markers and indentation {DEEP_COLUMN} or more columns "
+DEEP_LINE = (f"line %d has list, quote or footnote markers and indentation {DEEP_COLUMN} or more columns "
              "wide; some readers stop showing the rest of a file at lists nested about that deep, so nest "
              "lists and quotes less deeply")
 # VS Code's preview reads a line starting "$$" as a math block, which takes the lines below it up to one with
@@ -359,26 +373,27 @@ def _numbered_lines(text):
     return list(enumerate(LINE_END_RE.split(text), start=1))
 
 
-def split_frontmatter(lines):
+def split_frontmatter(text):
     """Return ((frontmatter lines, body lines), None), or (None, the problem) when a delimiter is missing,
-    a byte order mark comes before it, or a line before the closing one could end the frontmatter for some
-    reader, as "---" with whitespace after it does."""
-    if lines and lines[0][1].startswith("\ufeff"):
-        # markdown-it's front-matter plugins do not skip it, and then show the whole frontmatter as text.
-        return None, ("the file starts with a byte order mark (U+FEFF), which some readers do not skip "
-                      "before the frontmatter; save the file as UTF-8 without it")
-    missing = ("the file must start with a line that is exactly '---' and close the frontmatter with another "
-               "such line")
-    if not lines or lines[0][1] != "---":
-        return None, missing
+    a byte order mark comes before it, a line up to the closing one ends with a lone CR, or a line before
+    the closing one could end the frontmatter for some reader, as "---" with whitespace after it does."""
+    if text.startswith("\ufeff"):
+        return None, BYTE_ORDER_MARK
+    lines = _numbered_lines(text)
+    if lines[0][1] != "---":
+        return None, NO_FRONTMATTER
+    lone = LONE_CR_RE.search(text)
+    # The line that the first lone CR ends: one more than the line endings before it.
+    lone_line = len(LINE_END_RE.findall(text, 0, lone.start())) + 1 if lone else None
     for index in range(1, len(lines)):
-        number, text = lines[index]
-        if text == "---":
+        number, line = lines[index]
+        if line == "---":
+            if lone_line and lone_line <= number:
+                return None, LONE_CR % lone_line
             return (lines[1:index], lines[index + 1:]), None
-        if FRONTMATTER_END_RE.fullmatch(text):
-            return None, (f"line {number} could end the frontmatter for some readers; before the closing "
-                          "'---', no line may start with '---' or hold only '-' characters or '...'")
-    return None, missing
+        if FRONTMATTER_END_RE.fullmatch(line):
+            return None, EARLY_END % number
+    return None, NO_FRONTMATTER
 
 
 def _fence_opening(text):
@@ -423,9 +438,8 @@ def _has_html(text):
 
 def split_sections(body):
     """Read the body's layout: its sections, their yaml blocks, other code, and whatever could show a
-    reader something other than what the checker reads (HTML, a heading other than the four section
-    headings, a code block not at the first column or with a fence over 255 characters, a line nested 16
-    or more columns deep, a math block, a section heading inside a code block, an unclosed fence)."""
+    reader something other than what the checker reads (the layout problems in Section.html and
+    Section.stray, a section heading inside a code block, an unclosed fence)."""
     sections, hidden = [Section(None, 0, [])], {}
     fence = fence_line = block = None
     after_text = False  # whether the line above is one that a line of - or = could underline
@@ -473,16 +487,16 @@ def split_sections(body):
         stripped = _strip_containers(expanded)
         if stripped.strip(" \t") and not misplaced and stripped.startswith("    "):
             section.other_code = section.other_code or f"line {number} is indented, which makes it code"
-        # The columns before the text, or up to the end of the markers on a line with only markers; a blank
-        # line opens nothing.
+        # The columns before the text, or up to the end of the markers on a line with only markers. Trailing
+        # spaces go first, so a blank line measures nothing.
         marked = expanded.rstrip(" ")
         depth = len(marked) - len(_strip_containers(marked, ANY_CONTAINER_RE).lstrip(" "))
-        if marked and depth >= DEEP_COLUMN:
-            section.stray = section.stray or DEEP_TEXT % number
-        # A heading a reader could see. Lists and quotes are not worked out, so a line of - or = right under
-        # any line that is not blank counts, even where a reader sees a rule that ends a list or quote.
+        if depth >= DEEP_COLUMN:
+            section.stray = section.stray or DEEP_LINE % number
         if content.startswith("$$"):
             section.stray = section.stray or MATH_BLOCK % number
+        # A heading a reader could see. Lists and quotes are not worked out, so a line of - or = right under
+        # any line that is not blank counts, even where a reader sees a rule that ends a list or quote.
         if ATX_RE.match(content):
             section.stray = section.stray or OTHER_HEADING % number
         elif after_text and UNDERLINE_RE.fullmatch(text.lstrip(" \t>")):
@@ -753,7 +767,7 @@ def derive(ethics, roster):
 def check_artifact(text, roster):
     """Validate artifact text; for a valid artifact also derive its ethics_status."""
     problems = []
-    split, error = split_frontmatter(_numbered_lines(text))
+    split, error = split_frontmatter(text)
     if error:
         problems.append(Problem(V1, "frontmatter", error))
         return Result(problems, None, None, None, [])
@@ -775,9 +789,8 @@ def check_artifact(text, roster):
             problems.append(Problem(V7, f"## {name}", detail))
     for section in layout.sections:
         if section.heading not in CHECKED_SECTIONS:
-            # HTML, a misplaced or overlong code fence, a line nested too deep, or a math block can hide a
-            # section, and another heading can pass for one; the checked sections report these under their own
-            # rule.
+            # A layout problem in Section.html or Section.stray can hide a section or pass for one; the
+            # checked sections report these under their own rule.
             if section.html:
                 problems.append(Problem(V7, "body", HTML_DETAIL % section.html))
             if section.stray:
@@ -845,7 +858,8 @@ def main(argv=None):
         roster = load_roster()
         path = args[0]
         try:
-            text = Path(path).read_text(encoding="utf-8")
+            # Bytes, not text: reading text would turn a lone CR into LF before the checker could see it.
+            text = Path(path).read_bytes().decode("utf-8")
         except UnicodeDecodeError:
             raise CannotRun(f"{path} is not UTF-8 text") from None
         except OSError as err:

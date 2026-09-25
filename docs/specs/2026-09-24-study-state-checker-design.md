@@ -106,9 +106,13 @@ The checker accepts only the layout the agent writes (the template's). It
 reads that layout the way a CommonMark reader such as GitHub does, and
 treats as malformed anything else that could show a reader something other
 than what the checker reads. It does not work out lists and quotes, so a
-layout a reader might read either way is malformed.
+layout a reader might read either way is malformed. In the body, five of
+the rules below name **layout problems**: HTML, other headings, a code
+fence not at the first column or of more than 255 backticks or tildes,
+deep lines, and math blocks.
 
-- **Lines** end at CRLF, CR, or LF.
+- **Lines** end at CRLF, CR, or LF, except up to the end of the closing
+  frontmatter line, where they end only at CRLF or LF (see Frontmatter).
 - **Container markers**: `>`; a list marker (`-`, `+`, `*`, or up to nine
   ASCII digits and `.` or `)`) with a space or tab and text after it; and
   a footnote label such as `[^1]:`, which GitHub reads as the start of a
@@ -123,7 +127,12 @@ layout a reader might read either way is malformed.
   at most three spaces (markdown-it-front-matter), or `...` alone however
   indented (Jekyll, markdown-it-front-matter). Inside a YAML string such a
   line is text to the checker, while such a reader shows what follows it
-  as the body.
+  as the body. Every line up to and including the closing `---` must end
+  with LF or CRLF, not with a lone CR: Jekyll finds the frontmatter by LF
+  alone (its 4.4.1 rule, run in Ruby for this check), so at a lone CR it
+  finds no frontmatter, or a later end, and shows the frontmatter as body
+  text. The command-line checker reads the file's bytes, so no line
+  ending is changed before it looks.
 - **Code fences**: a line of up to three spaces, then three or more
   backticks or tildes, opens a fenced code block; a backtick fence's info
   string cannot contain a backtick. The block closes at the first later
@@ -228,15 +237,15 @@ lists and parentheses, so the agent can tell the user which rule failed.
 
 | # | Rule | Precise definition |
 |---|---|---|
-| V1 | Missing frontmatter delimiters | No `---` first line, or no closing `---` line; the file starts with a byte order mark; the first line has whitespace after `---`; or a line before the closing one starts with `---`, or holds only three or more `-` after at most three spaces, or only `...` |
+| V1 | Missing frontmatter delimiters | No `---` first line, or no closing `---` line; the file starts with a byte order mark; a line up to the closing one ends with a lone CR; the first line has whitespace after `---`; or a line before the closing one starts with `---`, or holds only three or more `-` after at most three spaces, or only `...` |
 | V2 | Frontmatter is not parseable YAML | Parse error, or the result is not a mapping |
 | V3 | Required frontmatter field missing | `schema_version`, `study_id`, `created`, `updated`, `revision`, or `current_phase` is absent, null, or an empty string |
 | V4 | `schema_version` is not a known version | Not the integer `1` |
 | V5 | `current_phase` is not in {PLAN, ETHICS, TRACK, COLLECT} | As stated |
 | V6 | `revision` is not a positive integer | Not an integer ≥ 1; `true` and `false` rejected |
-| V7 | Required body section heading missing | No `## Protocol Summary`, `## Ethics Checklist Status`, or `## TRACK Log` section. Section order and `## COLLECT Readiness` are not checked; the rule names only these three. When the heading is present but inside a fenced code block, the detail gives both line numbers. Also, outside the checked sections, HTML, a heading other than the four section headings, a code fence not at the first column or of more than 255 backticks or tildes, a line nested 16 or more columns deep, or a line starting `$$`, each reported at `body` with its line, because each can hide a section or pass for one |
-| V8 | Ethics Checklist Status YAML block is malformed | The section appears more than once, counting a `## Ethics Checklist Status` line inside a code fence; it has HTML, a heading other than the four section headings, a code fence not at the first column or of more than 255 backticks or tildes, a line nested 16 or more columns deep, or a line starting `$$`; a code fence in it is still open at the end of the file; it has no yaml block or more than one; it has other code (a fenced block that is not yaml, or a line indented four or more columns, also after block quote or list markers); parse error or not a mapping; `items` missing or not a list (an empty list is fine); an item not a mapping or lacking `id` or `status`; `id` not in the roster (`5.1` reported as belonging in the `irb` block); a repeated `id`; `status` not in {PASS, NEEDS_ACTION, NOT_APPLICABLE}; `irb` missing or not a mapping; `irb.required` not `true` or `false`; `irb.status` not in {NOT_YET_SUBMITTED, SUBMITTED, APPROVED, EXEMPT} |
-| V9 | TRACK Log YAML block is malformed | The section appears more than once, counting a `## TRACK Log` line inside a code fence; it has HTML, a heading other than the four section headings, a code fence not at the first column or of more than 255 backticks or tildes, a line nested 16 or more columns deep, or a line starting `$$`; a code fence in it is still open at the end of the file; it has no yaml block or more than one; it has other code, as for V8; parse error or not a mapping; `events` missing or not a list (an empty list is fine); an event not a mapping or lacking `ts` or `kind`; `kind` not in {count_update, timeline_change, quality_issue, agent_flag, user_note} |
+| V7 | Required body section heading missing | No `## Protocol Summary`, `## Ethics Checklist Status`, or `## TRACK Log` section. Section order and `## COLLECT Readiness` are not checked; the rule names only these three. When the heading is present but inside a fenced code block, the detail gives both line numbers. Also, outside the checked sections, a layout problem (see Parsing), reported at `body` with its line, because each can hide a section or pass for one |
+| V8 | Ethics Checklist Status YAML block is malformed | The section appears more than once, counting a `## Ethics Checklist Status` line inside a code fence; it has a layout problem (see Parsing); a code fence in it is still open at the end of the file; it has no yaml block or more than one; it has other code (a fenced block that is not yaml, or a line indented four or more columns, also after block quote or list markers); parse error or not a mapping; `items` missing or not a list (an empty list is fine); an item not a mapping or lacking `id` or `status`; `id` not in the roster (`5.1` reported as belonging in the `irb` block); a repeated `id`; `status` not in {PASS, NEEDS_ACTION, NOT_APPLICABLE}; `irb` missing or not a mapping; `irb.required` not `true` or `false`; `irb.status` not in {NOT_YET_SUBMITTED, SUBMITTED, APPROVED, EXEMPT} |
+| V9 | TRACK Log YAML block is malformed | The section appears more than once, counting a `## TRACK Log` line inside a code fence; it has a layout problem (see Parsing); a code fence in it is still open at the end of the file; it has no yaml block or more than one; it has other code, as for V8; parse error or not a mapping; `events` missing or not a list (an empty list is fine); an event not a mapping or lacking `ts` or `kind`; `kind` not in {count_update, timeline_change, quality_issue, agent_flag, user_note} |
 | V10 | Any timestamp is missing timezone | See below |
 
 A **timestamp** is `YYYY-MM-DDTHH:MM`, optionally followed by `:SS` and a
@@ -478,7 +487,8 @@ follow the shipped files. Tests run on Python 3.9 and on a current Python 3.
 | An opening fence of 256 backticks or tildes, which GitHub ends at a line of 255, around a decoy checklist; a fence of 255 | INVALID, V7 at `body`; VALID |
 | A line nested 16 or more columns deep: 50 list markers on one line and text, also below a decoy checklist; 10 list markers and `>` with no text, also 50 below a decoy checklist; 8 list markers; twelve list items nested one per line, also empty; five nested one per line, then five markers on one line; text after 7 list markers or 15 quote markers; 15 quote markers alone; a quote marker and 20 spaces | INVALID, V7 at `body`; VALID |
 | A line starting `$$` below a decoy checklist, also `$$ x $$ y`, `$$n = 100$$`, after `- ` or `> `, or indented three spaces; `$$` later in a line, and `$x$` | INVALID, V7 at `body`; VALID |
-| CR line endings | Same result as LF |
+| CRLF line endings, and a lone CR in the body; the command-line checker given a CRLF file | Same result as LF; exit 0 |
+| A lone CR ending a line up to the closing `---`: CR line endings, after the opening line, in the frontmatter, after the closing line (also with a decoy checklist and `<!--` in a block scalar); the command-line checker given such a file | INVALID, V1 naming the line; exit 1 |
 | A byte order mark before the frontmatter, also with a decoy checklist and `<!--` in a block scalar | INVALID, V1 |
 | A merge key; a tag such as `!!timestamp` or `!!int abc` | INVALID, parse error |
 | An integer of 5,000 digits, also in base 60; values nested 500 levels deep, or 150 levels through aliases | INVALID, parse error |
@@ -537,13 +547,17 @@ recruitment must stop.
   is INVALID even when it closes on the same line. `$...$` inside a line
   is text. A frontmatter string with a line that starts with `---`, or
   holds only `-` or `...`, is INVALID too, and so is a file saved with a
-  byte order mark. The agent writes none of these.
+  byte order mark, with CR line endings, or with a lone CR anywhere up to
+  the closing `---`. The agent writes none of these.
 - The checker reads the file as GitHub's file view and VS Code's preview
   do, with the frontmatter as frontmatter. A viewer that does not recognise
   frontmatter (plain cmark, markdown-it without its front-matter plugin, a
   GitHub comment) shows it as Markdown, where a frontmatter line could start
   HTML that the checker does not look for. Such a viewer shows every
-  artifact's frontmatter as body text, so it is out of scope.
+  artifact's frontmatter as body text, so it is out of scope. VS Code
+  1.132's preview passes the file's text to markdown-it unchanged, U+2028
+  and U+2029 included (checked in its bundle), so in the body those are
+  ordinary characters to both.
 - Derived status can become stricter for v1.1.0 artifacts (missing answer
   times, reconfirmation not done after approval). For a study already in
   TRACK, the agent then says recruitment must stop until the listed items are
@@ -591,3 +605,4 @@ recruitment must stop.
 | 2026-09-25 | A frontmatter line that some reader takes as the end of frontmatter is malformed | The seventh review round found that markdown-it-front-matter ends frontmatter at `---` indented up to three spaces and at `...` however indented, which a YAML block scalar can hold. A decoy checklist and `<!--` after such a line showed that reader a blocking checklist and hid the real body, while the checker read the real frontmatter and reported READY. The rule covers the ends that VS Code's preview (from its 1.132 source), Jekyll, gray-matter and markdown-it-front-matter take |
 | 2026-09-25 | A body line starting `$$` is malformed | The security review of round 7 noted VS Code's math blocks as a possible reader difference; VS Code's 1.132 source shows that its preview, with math on by default, reads a line starting `$$` as a math block that runs to a line with `$$` in it or to the end of the file. The agent writes no math; applies the strict-layout choice |
 | 2026-09-25 | A byte order mark at the start of the file is malformed, reversing "after an optional byte order mark" | The eighth review round found that markdown-it-front-matter does not skip a byte order mark, so it shows the whole frontmatter as body text: a decoy checklist and `<!--` in a YAML string showed a blocking checklist and hid the real sections, while the checker, which dropped the mark, reported READY. The agent writes no byte order mark |
+| 2026-09-25 | A lone CR ending a line up to the closing `---` is malformed, and the command-line checker reads the file's bytes | The ninth review round found that Jekyll finds the frontmatter by LF alone (its 4.4.1 rule, run here in Ruby): with a lone CR after the opening or the closing `---`, it finds no frontmatter and shows the frontmatter as body text, where a decoy checklist and `<!--` in a YAML string showed a blocking checklist and hid the real sections, while the checker, whose command line had turned the CR into LF, reported READY. In the body, Markdown readers end a line at a lone CR as the checker does, so it stays a line ending there. The agent writes LF |
