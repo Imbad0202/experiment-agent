@@ -113,7 +113,7 @@ CC-BY-NC 4.0
 
 ## 作者
 
-吳承翊 (Cheng-I Wu)
+吳政宜 Edward Cheng-I Wu
 
 ---
 
