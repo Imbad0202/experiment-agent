@@ -1,0 +1,41 @@
+name: release-discipline
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+
+concurrency:
+  group: release-discipline-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Validate release-doc alignment
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            EXPECTED="${GITHUB_REF_NAME#v}"
+            python tools/release-discipline/scripts/check_release_doc_alignment.py \
+              --manifest .release-discipline.toml \
+              --ci \
+              --expected-version "$EXPECTED"
+          else
+            python tools/release-discipline/scripts/check_release_doc_alignment.py \
+              --manifest .release-discipline.toml \
+              --ci
+          fi
+      - name: Validate command invariants
+        run: |
+          if [[ -f .command-invariants.toml ]]; then
+            python tools/release-discipline/scripts/check_command_invariants.py \
+              --manifest .command-invariants.toml
+          else
+            echo "no .command-invariants.toml — skipping command-invariants check"
+          fi

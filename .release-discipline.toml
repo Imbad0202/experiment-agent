@@ -1,0 +1,38 @@
+# Release-doc alignment, checked by tools/release-discipline on every push,
+# pull request and v* tag (.github/workflows/release-discipline.yml).
+# The version in SKILL.md's frontmatter is the authority. Each file below must
+# contain its text with that version; {date} is the date of that version's
+# CHANGELOG entry, so dates change only at a release. The template names come
+# from the toolkit: here they hold version lines, not only badges and URLs.
+
+changelog_path = "CHANGELOG.md"
+changelog_entry_pattern = '^## v(?P<version>\S+) \((?P<date>\d{4}-\d{2}-\d{2})\)$'
+
+[[file]]
+path = "README.md"
+badge_template = "badge/version-v{version}-blue"
+
+[[file]]
+path = "README.zh-TW.md"
+badge_template = "badge/version-v{version}-blue"
+
+[[file]]
+path = "SKILL.md"
+badge_template = "# Experiment Agent v{version} —"
+last_updated_template = "*Experiment Agent v{version} | {date} |"
+tag_url_template = 'last_updated: "{date}"'
+
+[[file]]
+path = ".claude/CLAUDE.md"
+badge_template = "| `experiment-agent` v{version} |"
+last_updated_template = "- **Last Updated**: {date}"
+tag_url_template = "- **Version**: {version}"
+
+[[file]]
+path = "agents/study_manager_agent.md"
+badge_template = "*Study Manager Agent v{version} | experiment-agent*"
+
+[[package]]
+path = "SKILL.md"
+type = "regex"
+pattern = '^  version: "(?P<version>[^"]+)"$'
