@@ -4,7 +4,7 @@ Canonical reference for the persistent artifact format used by
 study_manager_agent's session-resume feature. This document is the single
 source of truth for: artifact schema, the canonical checklist ID map, write
 protocol, resume protocol, validation rules, prompt-injection guard, and
-explicit out-of-scope behaviors for v1.1.0.
+explicit out-of-scope behaviors.
 
 <!-- PREAMBLE-NOTE (for maintainers): When this document and the design spec
 (docs/specs/2026-05-02-session-resume-design.md) disagree, the spec wins and

@@ -486,4 +486,4 @@ study cannot move to TRACK without the checker.
 
 ---
 
-*Study Manager Agent v1.1.0 | experiment-agent*
+*Study Manager Agent v1.2.0 | experiment-agent*

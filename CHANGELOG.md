@@ -1,5 +1,98 @@
 # Changelog
 
+## v1.2.0 (2026-09-25)
+
+In `manage` mode, a study's validation and ethics status now come from a
+program, when it can run, instead of the model's reading of the checklist,
+and a study moves on to participant recruitment and data collection only
+when that program reports READY.
+
+Spec: [docs/specs/2026-09-24-study-state-checker-design.md](docs/specs/2026-09-24-study-state-checker-design.md).
+Plan: [docs/plans/2026-09-24-study-state-checker-implementation.md](docs/plans/2026-09-24-study-state-checker-implementation.md).
+
+### New: Study state checker (F-08)
+
+- `scripts/check_study_state.py` reads a study state artifact and prints
+  `result: VALID` with the derived ethics status and its reasons, or
+  `result: INVALID` with one line per failed rule (V1-V10). It exits 0
+  when valid, 1 when invalid, and 2 when it cannot run.
+- `study_manager_agent` runs the checker after each write, when it
+  validates an artifact, and before it reports or acts on an ethics
+  status. If the checker cannot run, the agent says so, applies the rules
+  by hand, and does not move a study from ETHICS to TRACK.
+- After an IRB approval, the items in the reconfirmation set count only
+  when they are answered again after the recorded approval time. The
+  agent takes every time it records from the checker's `--now` option.
+- Data goes to analysis only when the ethics status is READY. Collection
+  can still be recorded as complete without it.
+- `manage` mode now needs Python 3.9 or later and PyYAML to move a study
+  into data collection. Both READMEs have a requirements section.
+
+### Changed
+
+- The skill's prompts were revised for current models (audit findings
+  F-01 to F-07, F-09, F-10 and B-1). This covers how SKILL.md dispatches
+  an agent, how statistical values read from unstructured output are
+  confirmed with the user, the default tolerance for environment-sensitive
+  reproducibility, and the ethics status wording in the templates.
+- The artifact layout is strict. HTML, any heading other than the four
+  section headings, a code fence not at the first column, code other than
+  the one yaml block in Ethics Checklist Status or TRACK Log, a line
+  nested or indented 16 or more columns deep, and a body line starting
+  `$$` make an artifact INVALID. The spec names the readers whose display
+  the checker matches (GitHub's file view, VS Code's preview and
+  markdown-it), with one exception: inline math in VS Code's preview.
+- The frontmatter and the yaml blocks are read strictly as well. YAML
+  that the checker cannot read unambiguously is a parse error, for
+  example a tag (such as `!!int`), a merge key (`<<`), a directive
+  (`%YAML` or `%TAG`), a repeated key, or the line separators U+0085,
+  U+2028 and U+2029; the spec lists the rest. The file must start with
+  a line that is exactly `---`, with no byte order mark before it; no
+  line up to the closing `---` may end with a lone CR; and no line inside
+  the frontmatter may be one that a Markdown reader could take as its
+  end, such as `---` indented by up to three spaces, or `...` alone on a
+  line, however indented.
+- A release check (`.github/workflows/release-discipline.yml`) runs on
+  every push, pull request and version tag. It fails when the files that
+  state the release version or date disagree.
+
+### Fixed
+
+- The version badge in both READMEs still showed 1.0, and the code runner
+  agent's footer still said v1.0. Both now show the current version.
+- The study state protocol said its list of out-of-scope behaviors was for
+  v1.1.0. The list still applies, so that line no longer names a release.
+- The 2026-05-02 session resume spec and plan use fictional names in
+  their examples.
+
+### Compatibility
+
+- v1.2.0 checks study state files more strictly than v1.1.0 did,
+  including files that v1.1.0 accepted and files edited by hand. A file
+  that drifts from the documented schema (an unknown item ID, a status or
+  event kind outside the documented values, a timestamp without offset),
+  or that uses one of the layouts or YAML forms above, becomes INVALID
+  with a message naming the problem, and the agent does not resume that
+  study until the file is fixed or the study is recreated. After
+  upgrading, run `python3 scripts/check_study_state.py <path-to-state.md>`
+  from the skill's directory on each study state file before you resume
+  the study.
+- The derived status can be stricter for v1.1.0 artifacts, for example
+  when reconfirmation after an approval is missing. It never becomes looser.
+  For a study already in TRACK or COLLECT, the agent then tells the user
+  that recruitment and data collection stop, and that no data goes to
+  analysis, until the status is READY again.
+- Without Python 3.9+ and PyYAML every mode still works, except that a
+  study cannot move from ETHICS to TRACK.
+
+### Still deferred
+
+The session resume hardening that v1.1.0 listed as "deferred to v1.2.0"
+is not in this release and has no target version: external-edit detection,
+recovery of a vanished or moved file, several studies in one workspace, an
+explicit `ethics-upgrade` command, slug-collision resolution, archiving old
+artifacts, and schema migration.
+
 ## v1.1.0 (2026-05-02)
 
 PR 2 (hardening: external-edit detection, multi-study, slug-collision

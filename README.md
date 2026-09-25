@@ -1,12 +1,21 @@
 # Experiment Agent
 
-[![Version](https://img.shields.io/badge/version-v1.1.0-blue)](https://github.com/Imbad0202/experiment-agent/releases)
+[![Version](https://img.shields.io/badge/version-v1.2.0-blue)](https://github.com/Imbad0202/experiment-agent/releases)
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey)](https://creativecommons.org/licenses/by-nc/4.0/)
 [![Sponsor](https://img.shields.io/badge/sponsor-Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://buymeacoffee.com/crucify020v)
 
 [繁體中文版](README.zh-TW.md)
 
 A Claude Code skill for executing, monitoring, interpreting, and verifying experiments in academic research.
+
+## What's new in v1.2.0
+
+- `manage` mode checks each study state file with a program, `scripts/check_study_state.py`. A study moves on to participant recruitment and data collection only when the program reports READY, and its data goes to analysis only when the ethics status is READY. If the program cannot run, the agent applies the rules by hand and says so, and it does not move a study into data collection.
+- After an IRB approval, the reconfirmation items must be answered again, later than the approval, before the study is READY.
+- Moving a study into data collection now needs Python 3.9 or later and PyYAML; see Requirements for human studies below.
+- Study state files are checked more strictly, so a file that v1.1.0 accepted can be reported INVALID. After upgrading, run the checker on each study state file before you resume the study (CHANGELOG.md, Compatibility).
+
+Full notes: [CHANGELOG.md](CHANGELOG.md)
 
 ## What It Does
 

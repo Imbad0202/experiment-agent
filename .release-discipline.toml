@@ -1,12 +1,13 @@
 # Release-doc alignment, checked by tools/release-discipline on every push,
 # pull request and v* tag (.github/workflows/release-discipline.yml).
-# The [[package]] entries read three versions that must agree: SKILL.md's
-# frontmatter, the project CLAUDE.md's Version line, and the CHANGELOG entry
-# directly under its title. On a v* tag they must also equal the tag. Each
-# [[file]] entry is text that file must contain with that version; {date} is
-# the date of that version's CHANGELOG entry, so dates change only at a
-# release. The template names come from the toolkit: here they hold version
-# lines, not only badges and URLs, and "\n" pins a line's start or end.
+# The [[package]] entries read four versions that must agree: the VERSION
+# file, SKILL.md's frontmatter, the project CLAUDE.md's Version line, and the
+# CHANGELOG entry directly under its title. On a v* tag they must also equal
+# the tag. Each [[file]] entry is text that file must contain with that
+# version; {date} is the date of that version's CHANGELOG entry, so dates
+# change only at a release. The template names come from the toolkit: here
+# they hold version lines, not only badges and URLs, and "\n" pins a line's
+# start or end.
 
 changelog_path = "CHANGELOG.md"
 changelog_entry_pattern = '^## v(?P<version>\S+) \((?P<date>\d{4}-\d{2}-\d{2})\)$'
@@ -14,10 +15,12 @@ changelog_entry_pattern = '^## v(?P<version>\S+) \((?P<date>\d{4}-\d{2}-\d{2})\)
 [[file]]
 path = "README.md"
 badge_template = "badge/version-v{version}-blue"
+tag_url_template = "\n## What's new in v{version}\n"
 
 [[file]]
 path = "README.zh-TW.md"
 badge_template = "badge/version-v{version}-blue"
+tag_url_template = "\n## v{version} 更新重點\n"
 
 [[file]]
 path = "SKILL.md"
@@ -37,6 +40,11 @@ badge_template = "\n*Study Manager Agent v{version} | experiment-agent*"
 [[file]]
 path = "agents/code_runner_agent.md"
 badge_template = "\n*Code Runner Agent v{version} | experiment-agent*"
+
+[[package]]
+path = "VERSION"
+type = "regex"
+pattern = '\A(?P<version>\d+\.\d+\.\d+)\n?\Z'
 
 [[package]]
 path = "SKILL.md"

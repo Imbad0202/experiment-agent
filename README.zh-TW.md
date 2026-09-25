@@ -1,10 +1,19 @@
 # 實驗代理人 (Experiment Agent)
 
-[![Version](https://img.shields.io/badge/version-v1.1.0-blue)](https://github.com/Imbad0202/experiment-agent/releases)
+[![Version](https://img.shields.io/badge/version-v1.2.0-blue)](https://github.com/Imbad0202/experiment-agent/releases)
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey)](https://creativecommons.org/licenses/by-nc/4.0/)
 [![Sponsor](https://img.shields.io/badge/sponsor-Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://buymeacoffee.com/crucify020v)
 
 Claude Code 技能：執行、監控、解讀、驗證學術研究實驗。
+
+## v1.2.0 更新重點
+
+- `manage` 模式改由程式 `scripts/check_study_state.py` 檢查每個研究的狀態檔。程式判定為 READY，研究才能進入招募與收資料階段；倫理狀態為 READY，資料才能交付分析。程式無法執行時，agent 會改用人工套用規則並說明這一點，但不會讓研究進入收資料階段。
+- IRB 核准之後，需要重新確認的項目必須在核准之後再回答一次，研究才會是 READY。
+- 研究要進入收資料階段，現在需要 Python 3.9 以上與 PyYAML，見下方「人類研究的執行需求」。
+- 研究狀態檔的檢查比 v1.1.0 嚴格，v1.1.0 接受的檔案可能被判為 INVALID。升級後，請在接續每個研究之前，先用這支程式檢查它的狀態檔（見 CHANGELOG.md 的 Compatibility 段落）。
+
+完整內容見 [CHANGELOG.md](CHANGELOG.md)
 
 ## 功能
 
