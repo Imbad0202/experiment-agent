@@ -60,7 +60,7 @@ All outputs use Markdown-based structured format with Material Passport for ARS 
 
 ### Ethics Status
 
-- **Status**: [READY | ETHICS_PENDING | ETHICS_BLOCKED]
+- **Status**: [NOT_YET_ASSESSED | ETHICS_BLOCKED | ETHICS_PENDING | READY]
 - **Blocked Items**: [list or "None"]
 
 ### Risks

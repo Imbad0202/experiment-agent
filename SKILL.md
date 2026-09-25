@@ -1,9 +1,9 @@
 ---
 name: experiment-agent
-description: "Experiment executor and monitor for academic research. 2-agent system covering code experiments (ML training, statistical analysis, ETL, simulation) and human studies (surveys, field studies, interviews). 4 modes: run (execute + monitor code), manage (track human studies), validate (statistical interpretation + reproducibility verification), plan (Socratic experiment design). Triggers on: run experiment, execute code, train model, benchmark, manage study, track participants, field study, survey, validate results, check statistics, reproduce, plan experiment, design study, 跑實驗, 執行程式, 管理研究, 驗證結果, 規劃實驗."
+description: "Experiment executor and monitor for academic research. 2-agent system covering code experiments (ML training, statistical analysis, ETL, simulation) and human studies (surveys, field studies, interviews). 4 modes: run (execute + monitor code), manage (track human studies), validate (statistical interpretation + reproducibility verification), plan (Socratic experiment design). Use when a researcher wants to run or monitor a research experiment, manage or resume a human-subject study, check the statistics or reproducibility of research results, or design an experiment or study, in English or Chinese (e.g., 跑實驗、管理研究、驗證結果、規劃實驗)."
 metadata:
-  version: "1.0"
-  last_updated: "2026-04-14"
+  version: "1.1.0"
+  last_updated: "2026-05-02"
   author: "Cheng-I Wu"
   license: "CC-BY-NC 4.0"
   status: active
@@ -14,7 +14,7 @@ metadata:
     - academic-paper-reviewer
 ---
 
-# Experiment Agent v1.0 — Experiment Executor and Monitor
+# Experiment Agent v1.1.0 — Experiment Executor and Monitor
 
 Execute, monitor, interpret, and verify experiments for academic research. Works independently or as an optional bridge between ARS Stage 1 (RESEARCH) and Stage 2 (WRITE).
 
@@ -82,11 +82,15 @@ Help me design an experiment to test whether AI tools improve QA officer product
 4. Validation keywords → enter validate mode (handled inline, see below)
 5. Design keywords → enter plan mode (handled inline, see below)
 
+Dispatching or delegating to an agent in this skill means reading its file under `agents/` and following it yourself in this conversation: both agents need the user mid-task (confirming a command, choosing what to do about an anomaly, answering protocol questions one at a time).
+
 ### Runtime Requirements
 
 Most modes work with any LLM runtime that supports prompt + reasoning.
 
-**Session resume in `manage` mode** additionally requires the runtime to provide Read, Write, and Edit tool access to the local filesystem. Claude Code provides these. Runtimes that surface only chat I/O can use the PLAN/ETHICS/TRACK/COLLECT loop in-session, but study state will not persist across restarts. The `resume <study_id>` command will be unavailable.
+**Session resume in `manage` mode** additionally requires the runtime to provide Read, Write, and Edit tool access to the local filesystem. Claude Code provides these. Runtimes that surface only chat I/O can use PLAN and ETHICS in-session, but study state will not persist across restarts, the `resume <study_id>` command will be unavailable, and a study cannot move to TRACK.
+
+**The study state checker** (`scripts/check_study_state.py`) validates `manage` mode's study state file and derives its ethics status. It needs a command tool (Bash in Claude Code), Python 3.9 or later, and PyYAML (`python3 -m pip install pyyaml`). Without it, `manage` mode still plans, runs the ethics checklist, and tracks studies already in TRACK, applying the rules by hand and saying so, but it does not move a study from ETHICS to TRACK.
 
 ---
 
@@ -96,7 +100,7 @@ Two capabilities: **statistical interpretation** and **reproducibility verificat
 
 ### Procedure
 
-1. **DETECT** — Scan user-provided files for statistical content (p-values, CIs, effect sizes, coefficients, test statistics). Structured formats (CSV/JSON) auto-parsed; unstructured formats require user guidance.
+1. **DETECT** — Scan user-provided files for statistical content (p-values, CIs, effect sizes, coefficients, test statistics). Structured formats (CSV/JSON) are parsed directly; from unstructured output, extract the values yourself and have the user confirm them before interpreting.
 
 2. **INTERPRET** — Item-by-item analysis. See `references/statistical_interpretation_guide.md` for full protocol covering: significance, effect size classification, CI assessment, assumption verification, multiple comparison correction.
 
@@ -149,7 +153,7 @@ Plan mode outputs use separate templates and also carry Material Passport:
 |----------|-------------|
 | Monitoring coverage | Every code experiment must have at least process-alive + timeout monitoring |
 | Statistical rigor | All 11 fallacy types must be checked in validate mode; coverage reported |
-| Reproducibility | Deterministic experiments: exact match required. Stochastic: < 5% relative diff default |
+| Reproducibility | Deterministic experiments: exact match required. Stochastic: < 5% relative diff default. Environment-sensitive: < 10% relative diff default (see `references/reproducibility_protocol.md`) |
 | ARS compatibility | All outputs include Material Passport with required fields per ARS Schema 9 |
 | User sovereignty | All anomaly detections are ADVISORY; only hard timeout auto-kills |
 
@@ -159,7 +163,7 @@ Plan mode outputs use separate templates and also carry Material Passport:
 
 | # | Rule |
 |---|------|
-| 1 | Only execute user-specified commands — never auto-generate or modify scripts |
+| 1 | Only execute user-specified commands — never auto-generate or modify scripts. Exception: `manage` mode runs this skill's read-only study state checker (`scripts/check_study_state.py`) |
 | 2 | Never auto-retry crashed experiments — notify user, user decides |
 | 3 | Never auto-kill except hard timeout — notify before kill |
 | 4 | Monitor only user-specified output paths |
@@ -194,6 +198,7 @@ Plan mode outputs use separate templates and also carry Material Passport:
 | `references/reproducibility_protocol.md` | Re-run methodology, comparison thresholds, verdict criteria |
 | `references/ars_integration_guide.md` | ARS Material Passport, handoff format, pipeline bridging |
 | `references/study_state_protocol.md` | Canonical reference for the study state artifact format used by `manage` mode session resume: schema, write/resume protocols, validation rules, prompt-injection guard, IRB approval reconfirmation set. |
+| `scripts/check_study_state.py` | Validates a study state file and derives its ethics status for `manage` mode (Python 3.9+, PyYAML). |
 | `templates/output_formats.md` | Complete Markdown output templates for all three output types |
 
 ---

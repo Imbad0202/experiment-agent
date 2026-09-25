@@ -63,14 +63,14 @@ ARS Stage 2 寫作      →  用實驗結果撰寫論文
 **步驟 1**：Clone 本 repo 到 ARS 專案旁（或任何位置）：
 
 ```bash
-cd ~/Projects/HEEACT
+cd ~/Projects
 git clone https://github.com/Imbad0202/experiment-agent.git
 ```
 
 **步驟 2**：需要跑實驗時，在 experiment-agent 目錄開啟 Claude Code session：
 
 ```bash
-cd ~/Projects/HEEACT/experiment-agent
+cd ~/Projects/experiment-agent
 claude
 ```
 
@@ -78,11 +78,21 @@ claude
 
 **步驟 4**：實驗完成並驗證後，將輸出（含 Material Passport header 與 verification status）複製回 ARS session，繼續 Stage 2。
 
+### 人類研究的執行需求
+
+`manage` 模式用 `scripts/check_study_state.py` 檢查每個研究的狀態檔，需要 Python 3.9 以上與 PyYAML：
+
+```bash
+python3 -m pip install pyyaml
+```
+
+如果 pip 出現 `externally-managed-environment` 錯誤，請依錯誤訊息的指示，為 PATH 上的 `python3` 安裝 PyYAML。Claude Code 執行這支檢查程式前會先詢問權限，可以選擇之後不再詢問。沒有這支檢查程式時，`manage` 模式仍可規劃研究、執行倫理檢核，但不會讓研究進入收資料階段。
+
 > 也可以透過 `.claude/skills/` symlink 將本技能加入任何專案。
 
 ## 安全機制
 
-- 只執行你指定的命令——從不自動生成或修改你的程式碼
+- 只執行你指定的命令——從不自動生成或修改你的程式碼（唯一例外：`manage` 模式會執行本 skill 內附、只讀不寫的研究狀態檢查程式）
 - 從不自動重試 crash 的實驗
 - 從不接觸原始參與者資料
 - 統計解讀是描述性的，不代替你下結論

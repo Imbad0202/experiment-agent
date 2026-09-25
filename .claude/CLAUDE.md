@@ -6,7 +6,7 @@ A Claude Code skill for experiment execution, monitoring, statistical interpreta
 
 | Skill | Purpose | Key Modes |
 |-------|---------|-----------|
-| `experiment-agent` v1.0 | Execute + monitor experiments | run, manage, validate, plan |
+| `experiment-agent` v1.1.0 | Execute + monitor experiments | run, manage, validate, plan |
 
 ## Routing Rules
 
@@ -23,13 +23,13 @@ A Claude Code skill for experiment execution, monitoring, statistical interpreta
 ## Key Rules
 
 - All anomaly detections are ADVISORY (user decides)
-- Only execute user-specified commands
+- Only execute user-specified commands, except `manage` mode's read-only study state checker (`scripts/check_study_state.py`)
 - Never auto-retry, never auto-kill (except hard timeout)
 - Statistical interpretation is descriptive, not editorial
 - Ethics checklist items are hard gates for human studies
 
 ## Version Info
-- **Version**: 1.0
-- **Last Updated**: 2026-04-14
+- **Version**: 1.1.0
+- **Last Updated**: 2026-05-02
 - **Author**: Cheng-I Wu
 - **License**: CC-BY-NC 4.0
