@@ -6,7 +6,7 @@ A Claude Code skill for experiment execution, monitoring, statistical interpreta
 
 | Skill | Purpose | Key Modes |
 |-------|---------|-----------|
-| `experiment-agent` v1.1.0 | Execute + monitor experiments | run, manage, validate, plan |
+| `experiment-agent` v1.2.0 | Execute + monitor experiments | run, manage, validate, plan |
 
 ## Routing Rules
 
@@ -29,7 +29,7 @@ A Claude Code skill for experiment execution, monitoring, statistical interpreta
 - Ethics checklist items are hard gates for human studies
 
 ## Version Info
-- **Version**: 1.1.0
-- **Last Updated**: 2026-05-02
+- **Version**: 1.2.0
+- **Last Updated**: 2026-09-25
 - **Author**: Cheng-I Wu
 - **License**: CC-BY-NC 4.0

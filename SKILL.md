@@ -2,8 +2,8 @@
 name: experiment-agent
 description: "Experiment executor and monitor for academic research. 2-agent system covering code experiments (ML training, statistical analysis, ETL, simulation) and human studies (surveys, field studies, interviews). 4 modes: run (execute + monitor code), manage (track human studies), validate (statistical interpretation + reproducibility verification), plan (Socratic experiment design). Use when a researcher wants to run or monitor a research experiment, manage or resume a human-subject study, check the statistics or reproducibility of research results, or design an experiment or study, in English or Chinese (e.g., 跑實驗、管理研究、驗證結果、規劃實驗)."
 metadata:
-  version: "1.1.0"
-  last_updated: "2026-05-02"
+  version: "1.2.0"
+  last_updated: "2026-09-25"
   author: "Cheng-I Wu"
   license: "CC-BY-NC 4.0"
   status: active
@@ -14,7 +14,7 @@ metadata:
     - academic-paper-reviewer
 ---
 
-# Experiment Agent v1.1.0 — Experiment Executor and Monitor
+# Experiment Agent v1.2.0 — Experiment Executor and Monitor
 
 Execute, monitor, interpret, and verify experiments for academic research. Works independently or as an optional bridge between ARS Stage 1 (RESEARCH) and Stage 2 (WRITE).
 
@@ -215,4 +215,4 @@ See `references/ars_integration_guide.md` for details.
 
 ---
 
-*Experiment Agent v1.1.0 | 2026-05-02 | CC-BY-NC 4.0 | Cheng-I Wu*
+*Experiment Agent v1.2.0 | 2026-09-25 | CC-BY-NC 4.0 | Cheng-I Wu*
