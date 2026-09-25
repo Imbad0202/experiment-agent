@@ -115,7 +115,7 @@ CC-BY-NC 4.0
 
 ## Author
 
-Cheng-I Wu
+吳政宜 Edward Cheng-I Wu
 
 ---
 
