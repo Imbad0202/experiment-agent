@@ -3,9 +3,9 @@
 ## v1.2.0 (2026-09-25)
 
 In `manage` mode, a study's validation and ethics status now come from a
-program instead of the model's reading of the checklist, and a study moves
-on to participant recruitment and data collection only when that program
-reports READY.
+program, when it can run, instead of the model's reading of the checklist,
+and a study moves on to participant recruitment and data collection only
+when that program reports READY.
 
 Spec: [docs/specs/2026-09-24-study-state-checker-design.md](docs/specs/2026-09-24-study-state-checker-design.md).
 Plan: [docs/plans/2026-09-24-study-state-checker-implementation.md](docs/plans/2026-09-24-study-state-checker-implementation.md).
@@ -42,6 +42,16 @@ Plan: [docs/plans/2026-09-24-study-state-checker-implementation.md](docs/plans/2
   `$$` make an artifact INVALID. The spec names the readers whose display
   the checker matches (GitHub's file view, VS Code's preview and
   markdown-it), with one exception: inline math in VS Code's preview.
+- The frontmatter and the yaml blocks are read strictly as well. YAML
+  that the checker cannot read unambiguously is a parse error, for
+  example a tag (such as `!!int`), a merge key (`<<`), a directive
+  (`%YAML` or `%TAG`), a repeated key, or the line separators U+0085,
+  U+2028 and U+2029; the spec lists the rest. The file must start with
+  a line that is exactly `---`, with no byte order mark before it; no
+  line up to the closing `---` may end with a lone CR; and no line inside
+  the frontmatter may be one that a Markdown reader could take as its
+  end, such as `---` indented by up to three spaces, or `...` alone on a
+  line, however indented.
 - A release check (`.github/workflows/release-discipline.yml`) runs on
   every push, pull request and version tag. It fails when the files that
   state the release version or date disagree.
@@ -57,9 +67,16 @@ Plan: [docs/plans/2026-09-24-study-state-checker-implementation.md](docs/plans/2
 
 ### Compatibility
 
-- Artifacts that follow the documented schema stay VALID. Artifacts that
-  drift from it, or that use one of the layouts above, become INVALID with
-  a message naming the problem.
+- v1.2.0 checks study state files more strictly than v1.1.0 did,
+  including files that v1.1.0 accepted and files edited by hand. A file
+  that drifts from the documented schema (an unknown item ID, a status or
+  event kind outside the documented values, a timestamp without offset),
+  or that uses one of the layouts or YAML forms above, becomes INVALID
+  with a message naming the problem, and the agent does not resume that
+  study until the file is fixed or the study is recreated. After
+  upgrading, run `python3 scripts/check_study_state.py <path-to-state.md>`
+  from the skill's directory on each study state file before you resume
+  the study.
 - The derived status can be stricter for v1.1.0 artifacts, for example
   when reconfirmation after an approval is missing. It never becomes looser.
   For a study already in TRACK or COLLECT, the agent then tells the user
