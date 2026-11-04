@@ -6,7 +6,8 @@ Defines how validate mode verifies reproducibility of code experiments by re-run
 
 - **Applicable**: Any experiment with an executable command and recorded original results
 - **Environment-sensitive but still comparable**: Hardware-dependent benchmarks, GPU training runs, OS-sensitive pipelines where the environment can be documented and approximately matched
-- **Not applicable**: Human studies, external API calls with non-deterministic responses, experiments whose original environment can no longer be reconstructed at all
+- **Not applicable**: Collecting human study data again, external API calls with non-deterministic responses, experiments whose original environment can no longer be reconstructed at all
+- A script that analyzes existing participant data can be re-run under the `participant_data` rules in `agents/code_runner_agent.md`
 - If not applicable, skip reproducibility verification and report: "Reproducibility: N/A — [reason]"
 
 ## Procedure

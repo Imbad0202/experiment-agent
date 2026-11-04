@@ -112,7 +112,7 @@ Two capabilities: **statistical interpretation** and **reproducibility verificat
 
 **Scope boundary**: validate mode describes what numbers say and flags potential fallacies. Its flag levels describe the checks, not the result, and its `What to check` column names what to look at. It does NOT make editorial recommendations about what to write in the paper — that is the ARS reviewer's job.
 
-**Participant data**: validate reads results, not participant records. Before you open a result file, ask whether it holds only aggregate numbers, unless the user already said. Any other answer, including "not sure", means do not open it: ask for the aggregate output. If a file turns out to hold row-level records, stop reading it, do not quote it, and tell the user that those rows have reached the model provider.
+**Participant data**: validate reads results, not participant records. Before you open a result file, ask whether it holds row-level records from human participants, unless the user already said. If the answer is yes or "not sure", do not open it: ask for the aggregate output. If a file turns out to hold row-level records, stop reading it, do not quote it, and tell the user that those rows have reached the model provider.
 
 ---
 

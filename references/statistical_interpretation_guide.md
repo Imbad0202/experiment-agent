@@ -41,7 +41,7 @@ Compare the absolute value of d and r. For an odds ratio below 1, compare 1/OR.
 - Warn if significant but small by this benchmark: "statistically significant with a small effect by this benchmark — consider whether this difference matters in context"
 
 **Confidence Interval:**
-- Does a 95% CI include 0 (or 1 for OR)? It should agree with p at alpha = .05. If they disagree, report the conflict and the CI level, sidedness and correction, and flag CAUTION. Do not override either number
+- Does a 95% CI include 0 (or 1 for OR)? It should agree with p at alpha = .05 when both describe the same parameter, test, sidedness and correction. If they should agree and do not, report the conflict and flag CAUTION. If they differ in setup, report that difference. Do not override either number
 - Width: narrow CI = precise estimate; wide CI = uncertain estimate
 - Asymmetric CI around point estimate → possible skewness
 
@@ -71,13 +71,13 @@ A flag level describes what the checks found. It does not say that a result is g
 
 | Level | Criteria |
 |-------|---------|
-| `NO_FLAGS` | Every check ran and none flagged: assumptions met, no fallacy rated above NOTE. A significant result also has a medium+ effect size. A non-significant result also has a precise estimate |
-| `CAUTION` | One or more: borderline p, a significant result with a small effect, unchecked assumptions, uncorrected comparisons, a non-significant result without a precise estimate, a fallacy rated CAUTION |
+| `NO_FLAGS` | Every check ran and none flagged: assumptions met, no fallacy rated above NOTE. A significant result also has a medium+ effect size. A non-significant result also has a CI inside the effect bounds |
+| `CAUTION` | One or more: borderline p, a significant result with a small effect, unchecked assumptions, uncorrected comparisons, a non-significant result without a CI inside the effect bounds, a fallacy rated CAUTION |
 | `RED_FLAG` | One or more: non-significant reframed as trend, violated assumptions, a fallacy rated RED_FLAG |
 
 The Overall Flag Level is the highest level among the findings and the fallacy scan.
 
-An estimate is **precise** when its whole CI lies between -B and +B (for a ratio, between 1/B and B). B is the user's stated smallest effect of interest in the same units, or else the medium effect in the table above when the CI is on that scale. Report any power figure, but it does not make an estimate precise: a study can miss its planned sample, and variance can exceed the plan. A CI that cannot be compared to B is not precision information.
+A CI is **inside the effect bounds** when all of it lies between -B and +B. B is the user's stated smallest effect of interest in the same units, or else the medium effect in the table above when the CI is on that scale. For a ratio, take a threshold below 1 as 1/threshold so that B is above 1, and use 1/B to B. Report any power figure, but it does not put a CI inside the bounds: a study can miss its planned sample, and variance can exceed the plan. A CI that cannot be compared to B is not inside the bounds.
 
 ---
 

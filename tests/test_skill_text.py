@@ -20,10 +20,10 @@ class ValidateTextTest(unittest.TestCase):
     def test_guide_rates_a_clean_null(self):
         guide = read("references/statistical_interpretation_guide.md")
         self.assertNotIn("SOLID", guide)
-        self.assertIn("A non-significant result also has a precise estimate", guide)
+        self.assertIn("A non-significant result also has a CI inside the effect bounds", guide)
         self.assertIn('Do not say "no effect"', guide)
-        self.assertIn("whole CI lies between -B and +B", guide)
-        self.assertIn("it does not make an estimate precise", guide)
+        self.assertIn("all of it lies between -B and +B", guide)
+        self.assertIn("it does not put a CI inside the bounds", guide)
         self.assertIn("highest level among the findings", guide)
         self.assertIn("a fallacy rated RED_FLAG", guide)
 
@@ -36,6 +36,7 @@ class RunModeTextTest(unittest.TestCase):
         self.assertIn("Ask before you open any data file", runner)
         self.assertIn('Treat "not sure" as yes', runner)
         self.assertIn("do not open input data files at all", runner)
+        self.assertIn("stop the run if it is not READY", runner)
 
     def test_participant_runs_report_metadata_only(self):
         runner = read("agents/code_runner_agent.md")
@@ -47,9 +48,10 @@ class RunModeTextTest(unittest.TestCase):
     def test_reruns_compare_participant_files_by_hash(self):
         protocol = read("references/reproducibility_protocol.md")
         self.assertIn("compare hash and size only", protocol)
+        self.assertIn("can be re-run under the `participant_data` rules", protocol)
 
     def test_validate_asks_before_opening_a_result_file(self):
-        self.assertIn("ask whether it holds only aggregate numbers", read("SKILL.md"))
+        self.assertIn("ask whether it holds row-level records from human participants", read("SKILL.md"))
 
     def test_safety_rule_matches_run_mode(self):
         skill = read("SKILL.md")
