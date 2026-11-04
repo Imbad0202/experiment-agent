@@ -1,0 +1,4 @@
+Synthetic results. Randomized experiment, two groups, n = 100 per group.
+Shapiro-Wilk: p = .33 (treatment), p = .47 (control). Levene's test: p = .61.
+One preregistered primary outcome; no other tests were run. No attrition.
+Independent-samples t-test: t(198) = 0.41, p = .68, d = 0.06, 95% CI for d [-0.22, 0.34].

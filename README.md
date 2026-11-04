@@ -48,8 +48,9 @@ Lu et al. (2026, *Nature*) demonstrated an Experiment Progress Manager for auton
 This skill works independently. It also integrates optionally with [Academic Research Skills (ARS)](https://github.com/Imbad0202/academic-research-skills):
 
 - Reads ARS Stage 1 output (RQ Brief, Methodology Blueprint) to pre-populate experiment design
-- Produces Material Passport-compatible output, including an explicit verification status, for ARS Stage 2 consumption
+- Produces output with a Material Passport header and this skill's own verification status, for you to bring to ARS Stage 2. It is not an ARS passport: ARS sets its own status
 - ARS requires zero modification — the user bridges manually
+- ARS asks about your experiments and has you enter each one (`repro_lock`, `planned_vs_executed`, `negative_results`, `known_limitations`). `validate` can give you a draft of the last three to check; you enter `repro_lock` yourself
 
 ### When to use with ARS
 
@@ -67,7 +68,7 @@ ARS Stage 1 RESEARCH  →  you get RQ Brief + Methodology Blueprint
 ARS Stage 2 WRITE     →  write paper using your experiment results
 ```
 
-Use experiment-agent when your research requires running experiments (code or human studies) before writing. If your paper is purely based on literature review or secondary data analysis, you don't need this — go directly from ARS Stage 1 to Stage 2.
+Use experiment-agent when your research requires running experiments (code or human studies) before writing. For secondary data analysis, use `run` and `validate`; if the data come from people, `run` asks about ethics approval first. If your paper is purely a literature review, you don't need this — go directly from ARS Stage 1 to Stage 2.
 
 ### How to load
 
@@ -105,7 +106,7 @@ If pip stops with an `externally-managed-environment` error, follow that message
 
 - Only executes commands you specify — never auto-generates or modifies your code. The one exception: `manage` mode runs this skill's read-only study state checker
 - Never auto-retries crashed experiments
-- Never touches raw participant data
+- Never reads raw participant data into the conversation. `run` can start your own script on such data after you answer its ethics questions, and then reports only file names and sizes, plus any files you name as aggregate-only
 - Statistical interpretation describes, never concludes
 - Full list: see SKILL.md Safety Rules
 

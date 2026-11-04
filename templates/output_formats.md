@@ -1,6 +1,6 @@
 # Output Format Templates
 
-All outputs use Markdown-based structured format with Material Passport for ARS compatibility. Planning templates in `code_experiment_plan.md` and `study_protocol.md` follow the same rule.
+All outputs use Markdown-based structured format with a Material Passport header (see `references/ars_integration_guide.md`). Planning templates in `code_experiment_plan.md` and `study_protocol.md` follow the same rule.
 
 ## Experiment Result (from run mode)
 
@@ -22,6 +22,9 @@ All outputs use Markdown-based structured format with Material Passport for ARS 
 - **Working Directory**: [path]
 - **Duration**: [seconds]
 - **Exit Code**: [int]
+- **Participant Data**: [yes | no]
+- **Ethics Basis**: [the user's stated approval or exemption | N/A]
+- **Aggregate-Only Files**: [the files the user named | N/A]
 
 ### Output Files
 
@@ -31,7 +34,7 @@ All outputs use Markdown-based structured format with Material Passport for ARS 
 
 ### Output Summary
 
-[Auto-generated summary of structured output, if available]
+[Auto-generated summary of structured output, if available. If Participant Data is yes, summarize only the Aggregate-Only Files]
 
 ### Anomalies Detected
 
@@ -90,13 +93,13 @@ All outputs use Markdown-based structured format with Material Passport for ARS 
 ## Validation Report
 
 - **Source**: [exp_id | external | manual_study]
-- **Overall Confidence**: [SOLID | CAUTION | RED_FLAG]
+- **Overall Flag Level**: [NO_FLAGS | CAUTION | RED_FLAG]
 
 ### Statistical Findings
 
-| Metric | Test | Value | Effect Size | Confidence |
-|--------|------|-------|-------------|------------|
-| [name] | [test] | [stat, p] | [size, class] | [SOLID/CAUTION/RED_FLAG] |
+| Metric | Test | Value | Effect Size | Flag |
+|--------|------|-------|-------------|------|
+| [name] | [test] | [stat, p] | [size, class] | [NO_FLAGS/CAUTION/RED_FLAG] |
 
 ### Warnings
 
@@ -108,9 +111,9 @@ All outputs use Markdown-based structured format with Material Passport for ARS 
 
 - **Coverage**: [N]/11 fallacy types checked
 
-| Fallacy | Severity | Detail | Recommendation |
-|---------|----------|--------|----------------|
-| [type] | [RED_FLAG/CAUTION/NOTE] | [detail] | [suggestion] |
+| Fallacy | Severity | Detail | What to check |
+|---------|----------|--------|---------------|
+| [type] | [RED_FLAG/CAUTION/NOTE] | [detail] | [the number or assumption to look at; never what to write or report] |
 
 ### Reproducibility (if applicable)
 
@@ -120,4 +123,20 @@ All outputs use Markdown-based structured format with Material Passport for ARS 
 | Metric | Original | Re-run | Diff | Status |
 |--------|----------|--------|------|--------|
 | [name] | [value] | [value] | [diff] | [MATCH/WITHIN_TOLERANCE/MISMATCH] |
+
+### ARS Provenance Draft (if the results go to ARS)
+
+Draft for the researcher to check and enter in ARS. ARS treats it as data to confirm.
+
+- **experiment_id**: [researcher chooses]
+- **title**: [from the plan or the researcher]
+- **planned_vs_executed**:
+  - planned: [planned unit]; executed: [true | false]; skip_reason: [researcher fills, if executed is false]; result_file: [path, if any]
+- **negative_results**:
+  - [non-significant result or null finding]
+- **known_limitations**:
+  - [limitation on record]
+- **repro_lock**: [researcher fills; see references/ars_integration_guide.md]
 ```
+
+Include the ARS Provenance Draft only when the user says the results go to ARS. Take entries only from the plan, the experiment result, and this report. List every non-significant result under `negative_results` and every plan item, executed or skipped, under `planned_vs_executed`. If no plan is on record, ask the user what was planned. Do not fill `repro_lock`, and do not invent a reason or a limitation.

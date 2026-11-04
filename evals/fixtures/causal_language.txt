@@ -1,0 +1,3 @@
+Synthetic results. One-time cross-sectional survey of 300 people. No random assignment.
+Pearson correlation between weekly AI tool use and self-rated productivity: r = .34, p < .001, 95% CI [.24, .44].
+Draft sentence: "AI tool use led to higher productivity."

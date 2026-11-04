@@ -6,7 +6,8 @@ Defines how validate mode verifies reproducibility of code experiments by re-run
 
 - **Applicable**: Any experiment with an executable command and recorded original results
 - **Environment-sensitive but still comparable**: Hardware-dependent benchmarks, GPU training runs, OS-sensitive pipelines where the environment can be documented and approximately matched
-- **Not applicable**: Human studies, external API calls with non-deterministic responses, experiments whose original environment can no longer be reconstructed at all
+- **Not applicable**: Collecting human study data again, external API calls with non-deterministic responses, experiments whose original environment can no longer be reconstructed at all
+- A script that analyzes existing participant data can be re-run under the `participant_data` rules in `agents/code_runner_agent.md`
 - If not applicable, skip reproducibility verification and report: "Reproducibility: N/A — [reason]"
 
 ## Procedure
@@ -50,6 +51,11 @@ Ask user: "Is this experiment deterministic, stochastic, or environment-sensitiv
 - Size within 10% tolerance (stochastic outputs may vary)
 - Structure match (same columns, same row count for CSV)
 - Content: spot-check first/last 5 rows
+
+**If `participant_data` is yes:**
+- Compare metrics only from the files the user named as aggregate-only
+- For every other output file, compare hash and size only. Do not use `diff` or spot-check rows
+- If no comparison is possible this way, the verdict is `CANNOT_VERIFY`
 
 ### Step 4: Verdict
 
