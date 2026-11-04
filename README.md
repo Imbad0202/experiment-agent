@@ -48,7 +48,7 @@ Lu et al. (2026, *Nature*) demonstrated an Experiment Progress Manager for auton
 This skill works independently. It also integrates optionally with [Academic Research Skills (ARS)](https://github.com/Imbad0202/academic-research-skills):
 
 - Reads ARS Stage 1 output (RQ Brief, Methodology Blueprint) to pre-populate experiment design
-- Produces Material Passport-compatible output, including an explicit verification status, for ARS Stage 2 consumption
+- Produces output with a Material Passport header and this skill's own verification status, for you to bring to ARS Stage 2. It is not an ARS passport: ARS sets its own status
 - ARS requires zero modification — the user bridges manually
 - ARS asks about your experiments and has you enter each one (`repro_lock`, `planned_vs_executed`, `negative_results`, `known_limitations`). `validate` can give you a draft of the last three to check; you enter `repro_lock` yourself
 

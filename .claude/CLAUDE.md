@@ -17,7 +17,7 @@ A Claude Code skill for experiment execution, monitoring, statistical interpreta
 ## ARS Integration
 
 - This skill works independently. No ARS dependency.
-- When used with ARS: all outputs include Material Passport (Schema 9) for compatibility.
+- When used with ARS: all outputs include a Material Passport header modeled on Schema 9.
 - ARS requires zero modification. The user bridges manually.
 
 ## Key Rules

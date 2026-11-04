@@ -51,6 +51,11 @@ Ask user: "Is this experiment deterministic, stochastic, or environment-sensitiv
 - Structure match (same columns, same row count for CSV)
 - Content: spot-check first/last 5 rows
 
+**If `participant_data` is yes:**
+- Compare metrics only from the files the user named as aggregate-only
+- For every other output file, compare hash and size only. Do not use `diff` or spot-check rows
+- If no comparison is possible this way, the verdict is `CANNOT_VERIFY`
+
 ### Step 4: Verdict
 
 | Verdict | Criteria |

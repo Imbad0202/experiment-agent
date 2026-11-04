@@ -24,7 +24,7 @@ For each statistical result, assess:
 - Report exact p-value (not just "significant" or "not significant")
 - Flag if p is borderline (.04-.05): "marginal significance — interpret with caution"
 - Flag if many tests run without correction: "N tests without multiple comparison correction"
-- If not significant, say "did not reach significance", then report the CI and any power figure. Do not say "no effect" unless an equivalence test supports it
+- If not significant, say "did not reach significance", then report the CI and any power figure. Do not say "no effect". If an equivalence test passed, report equivalence within its stated bounds
 
 **Effect Size:**
 
@@ -35,22 +35,26 @@ For each statistical result, assess:
 | r (correlation) | .10 | .30 | .50 |
 | Odds Ratio | 1.5 | 2.5 | 4.3 |
 
+Compare the absolute value of d and r. For an odds ratio below 1, compare 1/OR.
+
 - For a significant result, always report: "statistically significant with [small/medium/large] effect"
-- Warn if significant but small effect: "statistically significant but practically small — consider whether this difference matters in context"
+- Warn if significant but small by this benchmark: "statistically significant with a small effect by this benchmark — consider whether this difference matters in context"
 
 **Confidence Interval:**
-- Does CI include 0 (or 1 for OR)? → result is not significant regardless of p-value
+- Does a 95% CI include 0 (or 1 for OR)? It should agree with p at alpha = .05. If they disagree, report the conflict and the CI level, sidedness and correction, and flag CAUTION. Do not override either number
 - Width: narrow CI = precise estimate; wide CI = uncertain estimate
 - Asymmetric CI around point estimate → possible skewness
 
 **Assumption Checks:**
 
-| Test | Assumption | Red Flag |
+A missing check is an unchecked assumption (CAUTION). A reported or visible violation is a violated assumption (RED_FLAG).
+
+| Test | Assumption | What to Flag |
 |------|-----------|----------|
 | t-test | Normality | n < 30 per group and no normality test reported |
 | t-test | Equal variance | No Levene's test and group sizes differ > 2:1 |
 | ANOVA | Normality + homogeneity | Same as t-test; additionally check sphericity for RM |
-| Chi-squared | Expected frequencies >= 5 | Any cell < 5 → for 2x2 tables use Fisher's exact; for larger tables use an exact/Monte Carlo approach or collapse categories with justification |
+| Chi-squared | Expected frequencies >= 5 | Any cell < 5 → the chi-squared approximation may not hold. Note whether Fisher's exact (2x2), an exact or Monte Carlo test, or justified collapsing of categories was reported |
 | Regression | Linearity, normality of residuals, homoscedasticity | No diagnostic plots reported |
 | Correlation | Both variables continuous, linearity | Pearson used on ordinal data |
 
@@ -68,10 +72,12 @@ A flag level describes what the checks found. It does not say that a result is g
 | Level | Criteria |
 |-------|---------|
 | `NO_FLAGS` | Every check ran and none flagged: assumptions met, no fallacy rated above NOTE. A significant result also has a medium+ effect size. A non-significant result also has a precise estimate |
-| `CAUTION` | One or more: borderline p, small effect, unchecked assumptions, uncorrected comparisons, a non-significant result without a precise estimate, a fallacy rated CAUTION |
+| `CAUTION` | One or more: borderline p, a significant result with a small effect, unchecked assumptions, uncorrected comparisons, a non-significant result without a precise estimate, a fallacy rated CAUTION |
 | `RED_FLAG` | One or more: non-significant reframed as trend, violated assumptions, a fallacy rated RED_FLAG |
 
-An estimate is **precise** when its CI excludes a medium effect (see the table above) or the user's stated smallest effect of interest, or when a power analysis done before the data were collected gives power of at least .80 for that effect. Observed power computed from the same data does not count. A CI in raw units with no way to compare it to an effect size is not precision information.
+The Overall Flag Level is the highest level among the findings and the fallacy scan.
+
+An estimate is **precise** when its whole CI lies between -B and +B (for a ratio, between 1/B and B). B is the user's stated smallest effect of interest in the same units, or else the medium effect in the table above when the CI is on that scale. Report any power figure, but it does not make an estimate precise: a study can miss its planned sample, and variance can exceed the plan. A CI that cannot be compared to B is not precision information.
 
 ---
 

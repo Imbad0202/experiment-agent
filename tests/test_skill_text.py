@@ -22,7 +22,9 @@ class ValidateTextTest(unittest.TestCase):
         self.assertNotIn("SOLID", guide)
         self.assertIn("A non-significant result also has a precise estimate", guide)
         self.assertIn('Do not say "no effect"', guide)
-        self.assertIn("Observed power computed from the same data does not count", guide)
+        self.assertIn("whole CI lies between -B and +B", guide)
+        self.assertIn("it does not make an estimate precise", guide)
+        self.assertIn("highest level among the findings", guide)
         self.assertIn("a fallacy rated RED_FLAG", guide)
 
 
@@ -31,22 +33,37 @@ class RunModeTextTest(unittest.TestCase):
         runner = read("agents/code_runner_agent.md")
         self.assertIn("`participant_data` | Yes", runner)
         self.assertIn('Any "no" or "not sure" on the first two stops the run', runner)
+        self.assertIn("Ask before you open any data file", runner)
+        self.assertIn('Treat "not sure" as yes', runner)
+        self.assertIn("do not open input data files at all", runner)
 
     def test_participant_runs_report_metadata_only(self):
         runner = read("agents/code_runner_agent.md")
         self.assertIn("report the exit code, file names and sizes only", runner)
         self.assertIn("Do not read logs or output to monitor them", runner)
+        self.assertIn("send stdout and stderr to a log file", runner)
+        self.assertNotIn("paste what they choose", runner)
+
+    def test_reruns_compare_participant_files_by_hash(self):
+        protocol = read("references/reproducibility_protocol.md")
+        self.assertIn("compare hash and size only", protocol)
+
+    def test_validate_asks_before_opening_a_result_file(self):
+        self.assertIn("ask whether it holds only aggregate numbers", read("SKILL.md"))
 
     def test_safety_rule_matches_run_mode(self):
         skill = read("SKILL.md")
         self.assertIn("Never read raw participant data into the conversation", skill)
         self.assertNotIn("Never touch raw participant data", skill)
+        self.assertNotIn("SOLID", skill)
 
 
 class HandoffTextTest(unittest.TestCase):
     def test_ars_guide_does_not_suggest_skipping_the_question(self):
         guide = read("references/ars_integration_guide.md")
         self.assertNotIn('skip "do you have experiment data?"', guide)
+        self.assertNotIn("asks every run", guide)
+        self.assertIn("Do not copy these values into an ARS passport", guide)
         for field in ("repro_lock", "planned_vs_executed", "negative_results", "known_limitations"):
             self.assertIn(field, guide)
 

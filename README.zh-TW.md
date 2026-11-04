@@ -46,7 +46,7 @@ Lu et al.（2026, *Nature*）展示了自主 AI 研究的實驗進度管理器�
 本技能可獨立使用，也可選擇性整合 [Academic Research Skills (ARS)](https://github.com/Imbad0202/academic-research-skills)：
 
 - 讀取 ARS Stage 1 輸出（RQ Brief、Methodology Blueprint）預填實驗設計
-- 產出符合 Material Passport、且明確標示 verification status 的輸出供 ARS Stage 2 使用
+- 產出帶有 Material Passport 標頭與本技能自己的 verification status，供你帶到 ARS Stage 2。它不是 ARS passport，ARS 的狀態由 ARS 設定
 - ARS 不需要任何修改——使用者手動銜接
 - ARS 會詢問你的實驗，並請你逐筆填寫（`repro_lock`、`planned_vs_executed`、`negative_results`、`known_limitations`）。`validate` 可以提供後三項的草稿供你核對，`repro_lock` 由你自己填
 

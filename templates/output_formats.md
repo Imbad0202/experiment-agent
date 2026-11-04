@@ -1,6 +1,6 @@
 # Output Format Templates
 
-All outputs use Markdown-based structured format with Material Passport for ARS compatibility. Planning templates in `code_experiment_plan.md` and `study_protocol.md` follow the same rule.
+All outputs use Markdown-based structured format with a Material Passport header (see `references/ars_integration_guide.md`). Planning templates in `code_experiment_plan.md` and `study_protocol.md` follow the same rule.
 
 ## Experiment Result (from run mode)
 
@@ -139,4 +139,4 @@ Draft for the researcher to check and enter in ARS. ARS treats it as data to con
 - **repro_lock**: [researcher fills; see references/ars_integration_guide.md]
 ```
 
-Include the ARS Provenance Draft only when the user says the results go to ARS. Take entries only from the plan, the experiment result, and this report. List every non-significant result under `negative_results` and every skipped plan item under `planned_vs_executed`. If no plan is on record, ask the user what was planned. Do not fill `repro_lock`, and do not invent a reason or a limitation.
+Include the ARS Provenance Draft only when the user says the results go to ARS. Take entries only from the plan, the experiment result, and this report. List every non-significant result under `negative_results` and every plan item, executed or skipped, under `planned_vs_executed`. If no plan is on record, ask the user what was planned. Do not fill `repro_lock`, and do not invent a reason or a limitation.

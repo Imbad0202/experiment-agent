@@ -106,13 +106,13 @@ Two capabilities: **statistical interpretation** and **reproducibility verificat
 
 3. **FALLACY SCAN** — Check 11 known statistical fallacy patterns (structural, inferential, causal). See `references/statistical_interpretation_guide.md` for the full checklist. All 11 must be checked; report coverage in output.
 
-4. **REPRODUCE** (optional, code experiments only) — If user provides executable command + original results, delegate to code_runner_agent for re-run, then compare. See `references/reproducibility_protocol.md`. Not applicable to human studies or non-rerunnable external systems.
+4. **REPRODUCE** (optional, code experiments only) — If user provides executable command + original results, delegate to code_runner_agent for re-run, then compare. See `references/reproducibility_protocol.md`. Not applicable to collecting human data again or to non-rerunnable external systems. A script that analyzes participant data can be re-run under the participant data rules.
 
 5. **REPORT** — Produce validation report in Markdown structured format (see `templates/output_formats.md`). Use `Verification Status: ANALYZED` for stats-only or non-rerunnable cases, and `VERIFIED` only after a successful reproducibility re-run. If the user says the results go to ARS, add the ARS Provenance Draft.
 
 **Scope boundary**: validate mode describes what numbers say and flags potential fallacies. Its flag levels describe the checks, not the result, and its `What to check` column names what to look at. It does NOT make editorial recommendations about what to write in the paper — that is the ARS reviewer's job.
 
-**Participant data**: validate reads results, not participant records. If a file holds row-level participant data, stop reading it, do not quote it, and ask for the aggregate output.
+**Participant data**: validate reads results, not participant records. Before you open a result file, ask whether it holds only aggregate numbers, unless the user already said. Any other answer, including "not sure", means do not open it: ask for the aggregate output. If a file turns out to hold row-level records, stop reading it, do not quote it, and tell the user that those rows have reached the model provider.
 
 ---
 
@@ -136,10 +136,10 @@ One question at a time. Multiple choice preferred. If user brings ARS Stage 1 ou
 
 ## Output Formats
 
-All outputs use **Markdown-based structured format** with Material Passport (ARS Schema 9) for compatibility. Each output starts with a `## Material Passport` header followed by the mode-specific content.
+All outputs use **Markdown-based structured format** with a Material Passport header modeled on ARS Schema 9. It is not an ARS passport (see `references/ars_integration_guide.md`). Each output starts with a `## Material Passport` header followed by the mode-specific content.
 
 See `templates/output_formats.md` for complete templates for the three execution/validation outputs:
-- **Experiment Result** (run mode): Material Passport + ID, type, status, command, output files, anomalies
+- **Experiment Result** (run mode): Material Passport + ID, type, status, command, participant data fields, output files, anomalies
 - **Study Status** (manage mode): Material Passport + ID, phase, progress, ethics status, risks, data readiness
 - **Validation Report** (validate mode): Material Passport + statistical findings table, warnings, fallacy scan, reproducibility verdict, and an ARS provenance draft when the results go to ARS
 
@@ -156,7 +156,7 @@ Plan mode outputs use separate templates and also carry Material Passport:
 | Monitoring coverage | Every code experiment must have at least process-alive + timeout monitoring |
 | Statistical rigor | All 11 fallacy types must be checked in validate mode; coverage reported |
 | Reproducibility | Deterministic experiments: exact match required. Stochastic: < 5% relative diff default. Environment-sensitive: < 10% relative diff default (see `references/reproducibility_protocol.md`) |
-| ARS compatibility | All outputs include Material Passport with required fields per ARS Schema 9 |
+| Passport header | All outputs include a Material Passport header modeled on ARS Schema 9 |
 | User sovereignty | All anomaly detections are ADVISORY; only hard timeout auto-kills |
 
 ---
@@ -210,7 +210,7 @@ Plan mode outputs use separate templates and also carry Material Passport:
 This skill works independently. When used with ARS:
 
 - **Consuming ARS output**: Recognizes ARS Stage 1 section headings (`## Research Question Brief`, `## Methodology Blueprint`) to pre-populate plan/manage modes
-- **Producing ARS-compatible output**: All outputs carry Material Passport (Schema 9). Users bring results to ARS Stage 2 manually. ARS asks each scholar about their experiments and has them enter the details; validate mode can give a draft of those details to check.
+- **Producing output for ARS**: All outputs carry a Material Passport header modeled on Schema 9. It is not an ARS passport. Users bring results to ARS Stage 2 manually. ARS asks each scholar about their experiments and has them enter the details; validate mode can give a draft of those details to check.
 - **ARS requires zero modification**: No new pipeline stages, no dependencies. The user is the bridge.
 
 See `references/ars_integration_guide.md` for details.

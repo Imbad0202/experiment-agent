@@ -23,9 +23,9 @@ When a user brings ARS Stage 1 (RESEARCH) output to experiment-agent, detect the
 
 **Detection method**: Loose heading matching. Do not depend on ARS schema version numbers. If headings are present, parse. If not, ask user for context.
 
-## Producing ARS-Compatible Output
+## Producing Output for ARS
 
-All experiment-agent outputs include a **Material Passport** header (ARS Schema 9):
+All experiment-agent outputs include a **Material Passport** header modeled on ARS Schema 9 (see Passport Differences below):
 
 ```markdown
 ## Material Passport
@@ -64,7 +64,7 @@ The user is the bridge. No API calls, no automated handoff, no shared state.
 
 ## What ARS Asks at Intake
 
-ARS asks every run whether the paper reports experiments or data analyses the scholar ran, and it records the scholar's own answer. Do not suggest skipping that question: ARS treats this skill's output as data for the scholar to confirm, not as an answer.
+ARS asks whether the paper reports experiments or data analyses the scholar ran, and it records the scholar's own answer. It does not ask when a run reaches no integrity gate or when the passport already carries a declaration. Do not suggest skipping that question: ARS treats this skill's output as data for the scholar to confirm, not as an answer.
 
 After a yes, the scholar enters one `experiment_provenance[]` entry per experiment. This skill does not fill them in ARS. Validate mode can give a draft (see `templates/output_formats.md`):
 
@@ -74,9 +74,9 @@ After a yes, the scholar enters one `experiment_provenance[]` entry per experime
 | `planned_vs_executed` | Draft from the plan and the experiment result; the researcher confirms and gives each `skip_reason` |
 | `negative_results` | Draft from the validation report; the researcher confirms and adds what the report cannot see |
 | `known_limitations` | Draft from the report and the plan; the researcher confirms and adds |
-| `repro_lock` | The researcher. It records ARS version, model, prompt hashes and literature-search settings, which this skill does not know |
+| `repro_lock` | The researcher. It records ARS version, model, prompt hashes, materials, external protocols and cross-model settings, which this skill does not know |
 
-`repro_lock` was designed for LLM and artifact settings. For a study with no model, such as a survey, ARS does not yet say what to enter. Tell the researcher this, and do not invent hashes or versions.
+`repro_lock` was designed for LLM and artifact settings, so a study with no model, such as a survey, may have no honest value for some required fields. Point the researcher to ARS's current guidance, and do not invent hashes or versions.
 
 ## Passport Differences
 
