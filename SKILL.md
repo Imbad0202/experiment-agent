@@ -108,9 +108,11 @@ Two capabilities: **statistical interpretation** and **reproducibility verificat
 
 4. **REPRODUCE** (optional, code experiments only) — If user provides executable command + original results, delegate to code_runner_agent for re-run, then compare. See `references/reproducibility_protocol.md`. Not applicable to human studies or non-rerunnable external systems.
 
-5. **REPORT** — Produce validation report in Markdown structured format (see `templates/output_formats.md`). Use `Verification Status: ANALYZED` for stats-only or non-rerunnable cases, and `VERIFIED` only after a successful reproducibility re-run.
+5. **REPORT** — Produce validation report in Markdown structured format (see `templates/output_formats.md`). Use `Verification Status: ANALYZED` for stats-only or non-rerunnable cases, and `VERIFIED` only after a successful reproducibility re-run. If the user says the results go to ARS, add the ARS Provenance Draft.
 
-**Scope boundary**: validate mode describes what numbers say and flags potential fallacies. It does NOT make editorial recommendations about what to write in the paper — that is the ARS reviewer's job.
+**Scope boundary**: validate mode describes what numbers say and flags potential fallacies. Its flag levels describe the checks, not the result, and its `What to check` column names what to look at. It does NOT make editorial recommendations about what to write in the paper — that is the ARS reviewer's job.
+
+**Participant data**: validate reads results, not participant records. If a file holds row-level participant data, stop reading it, do not quote it, and ask for the aggregate output.
 
 ---
 
@@ -139,7 +141,7 @@ All outputs use **Markdown-based structured format** with Material Passport (ARS
 See `templates/output_formats.md` for complete templates for the three execution/validation outputs:
 - **Experiment Result** (run mode): Material Passport + ID, type, status, command, output files, anomalies
 - **Study Status** (manage mode): Material Passport + ID, phase, progress, ethics status, risks, data readiness
-- **Validation Report** (validate mode): Material Passport + statistical findings table, warnings, fallacy scan, reproducibility verdict
+- **Validation Report** (validate mode): Material Passport + statistical findings table, warnings, fallacy scan, reproducibility verdict, and an ARS provenance draft when the results go to ARS
 
 Plan mode outputs use separate templates and also carry Material Passport:
 - **Code Experiment Plan** (plan mode, code path): `templates/code_experiment_plan.md`
@@ -168,7 +170,7 @@ Plan mode outputs use separate templates and also carry Material Passport:
 | 3 | Never auto-kill except hard timeout — notify before kill |
 | 4 | Monitor only user-specified output paths |
 | 5 | Never upload data to external services |
-| 6 | Never touch raw participant data — track metadata only (counts, rates) |
+| 6 | Never read raw participant data into the conversation — track metadata only (counts, rates). `run` can start the user's own script on such data after the checks in `agents/code_runner_agent.md` |
 | 7 | Never send notifications to study participants |
 | 8 | Power analysis uses conservative estimates |
 | 9 | Statistical interpretation is descriptive — does not draw conclusions for user |
@@ -208,7 +210,7 @@ Plan mode outputs use separate templates and also carry Material Passport:
 This skill works independently. When used with ARS:
 
 - **Consuming ARS output**: Recognizes ARS Stage 1 section headings (`## Research Question Brief`, `## Methodology Blueprint`) to pre-populate plan/manage modes
-- **Producing ARS-compatible output**: All outputs carry Material Passport (Schema 9). Users bring results to ARS Stage 2 manually.
+- **Producing ARS-compatible output**: All outputs carry Material Passport (Schema 9). Users bring results to ARS Stage 2 manually. ARS asks each scholar about their experiments and has them enter the details; validate mode can give a draft of those details to check.
 - **ARS requires zero modification**: No new pipeline stages, no dependencies. The user is the bridge.
 
 See `references/ars_integration_guide.md` for details.

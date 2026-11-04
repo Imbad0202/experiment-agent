@@ -24,6 +24,7 @@ For each statistical result, assess:
 - Report exact p-value (not just "significant" or "not significant")
 - Flag if p is borderline (.04-.05): "marginal significance — interpret with caution"
 - Flag if many tests run without correction: "N tests without multiple comparison correction"
+- If not significant, say "did not reach significance", then report the CI and any power figure. Do not say "no effect" unless an equivalence test supports it
 
 **Effect Size:**
 
@@ -34,7 +35,7 @@ For each statistical result, assess:
 | r (correlation) | .10 | .30 | .50 |
 | Odds Ratio | 1.5 | 2.5 | 4.3 |
 
-- Always report: "statistically significant with [small/medium/large] effect"
+- For a significant result, always report: "statistically significant with [small/medium/large] effect"
 - Warn if significant but small effect: "statistically significant but practically small — consider whether this difference matters in context"
 
 **Confidence Interval:**
@@ -56,17 +57,21 @@ For each statistical result, assess:
 **Multiple Comparisons:**
 - Count total number of statistical tests in the analysis
 - If > 3 tests and no correction reported:
-  - Suggest Bonferroni (conservative): adjusted alpha = .05 / N
-  - Suggest Benjamini-Hochberg FDR (less conservative): for exploratory analyses
-  - Report: which results survive correction, which don't
+  - Report which results survive Bonferroni (conservative): adjusted alpha = .05 / N
+  - Report which results survive Benjamini-Hochberg FDR (less conservative)
+  - Do not choose a correction for the user
 
-### Step 3: Assign Confidence Level
+### Step 3: Assign Flag Level
+
+A flag level describes what the checks found. It does not say that a result is good, true, or fit to publish.
 
 | Level | Criteria |
 |-------|---------|
-| `SOLID` | Significant with medium+ effect size, assumptions met, no fallacies detected |
-| `CAUTION` | One or more: borderline p, small effect, unchecked assumptions, uncorrected comparisons |
-| `RED_FLAG` | Multiple issues: non-significant reframed as trend, violated assumptions, detected fallacy |
+| `NO_FLAGS` | Every check ran and none flagged: assumptions met, no fallacy rated above NOTE. A significant result also has a medium+ effect size. A non-significant result also has a precise estimate |
+| `CAUTION` | One or more: borderline p, small effect, unchecked assumptions, uncorrected comparisons, a non-significant result without a precise estimate, a fallacy rated CAUTION |
+| `RED_FLAG` | One or more: non-significant reframed as trend, violated assumptions, a fallacy rated RED_FLAG |
+
+An estimate is **precise** when its CI excludes a medium effect (see the table above) or the user's stated smallest effect of interest, or when a power analysis done before the data were collected gives power of at least .80 for that effect. Observed power computed from the same data does not count. A CI in raw units with no way to compare it to an effect size is not precision information.
 
 ---
 

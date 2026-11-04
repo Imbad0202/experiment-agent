@@ -48,6 +48,7 @@ Lu et al.（2026, *Nature*）展示了自主 AI 研究的實驗進度管理器�
 - 讀取 ARS Stage 1 輸出（RQ Brief、Methodology Blueprint）預填實驗設計
 - 產出符合 Material Passport、且明確標示 verification status 的輸出供 ARS Stage 2 使用
 - ARS 不需要任何修改——使用者手動銜接
+- ARS 會詢問你的實驗，並請你逐筆填寫（`repro_lock`、`planned_vs_executed`、`negative_results`、`known_limitations`）。`validate` 可以提供後三項的草稿供你核對，`repro_lock` 由你自己填
 
 ### 何時搭配 ARS 使用
 
@@ -65,7 +66,7 @@ ARS Stage 1 研究      →  取得 RQ Brief + Methodology Blueprint
 ARS Stage 2 寫作      →  用實驗結果撰寫論文
 ```
 
-當你的研究需要跑實驗（程式碼或人工研究）才能開始寫作時，使用 experiment-agent。如果論文純粹基於文獻回顧或二次資料分析，不需要這個工具，直接從 ARS Stage 1 進入 Stage 2。
+當你的研究需要跑實驗（程式碼或人工研究）才能開始寫作時，使用 experiment-agent。二次資料分析請用 `run` 和 `validate`；資料來自人類受試者時，`run` 會先問倫理審查。如果論文純粹是文獻回顧，不需要這個工具，直接從 ARS Stage 1 進入 Stage 2。
 
 ### 如何載入
 
@@ -103,7 +104,7 @@ python3 -m pip install pyyaml
 
 - 只執行你指定的命令——從不自動生成或修改你的程式碼（唯一例外：`manage` 模式會執行本 skill 內附、只讀不寫的研究狀態檢查程式）
 - 從不自動重試 crash 的實驗
-- 從不接觸原始參與者資料
+- 從不把原始參與者資料讀進對話。`run` 可以在你回答倫理問題後，對這類資料執行你自己的腳本，之後只回報檔名與大小，以及你指定為純彙總的檔案
 - 統計解讀是描述性的，不代替你下結論
 - 完整清單見 SKILL.md 安全規則
 

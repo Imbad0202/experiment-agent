@@ -26,7 +26,8 @@ A Claude Code skill for experiment execution, monitoring, statistical interpreta
 - Only execute user-specified commands, except `manage` mode's read-only study state checker (`scripts/check_study_state.py`)
 - Never auto-retry, never auto-kill (except hard timeout)
 - Statistical interpretation is descriptive, not editorial
-- Ethics checklist items are hard gates for human studies
+- Ethics checklist items are hard gates for human studies; `run` mode's participant data questions are a hard gate too
+- Participant rows stay out of the conversation in every mode
 
 ## Version Info
 - **Version**: 1.2.0

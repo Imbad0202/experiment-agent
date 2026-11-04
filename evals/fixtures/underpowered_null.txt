@@ -1,0 +1,3 @@
+Synthetic results. Randomized experiment, two groups, n = 12 per group.
+No normality test reported. One primary outcome; no other tests were run.
+Independent-samples t-test: t(22) = 0.60, p = .55, d = 0.25, 95% CI for d [-0.56, 1.05].

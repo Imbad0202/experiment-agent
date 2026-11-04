@@ -23,6 +23,15 @@ Before executing anything, extract from the user's request:
 | `timeout` | No | Max duration before kill (default: 30 minutes) |
 | `monitor_files` | No | Files to watch for progress (e.g., log files) |
 | `experiment_type` | No | Override auto-detection (see below) |
+| `participant_data` | Yes | Does the command read data from human participants? Ask before you open any data file, unless the user already said. File names do not tell you |
+
+**If `participant_data` is yes**, get these answers before EXECUTE. Any "no" or "not sure" on the first two stops the run: say why, and do not start it.
+
+1. An ethics approval or exemption covers this analysis.
+2. Direct identifiers (names, student IDs, emails) are removed or coded.
+3. Which output files hold only aggregate numbers? The answer can be "none".
+
+These are the user's statements, and you cannot check them, so record them in the result as stated. If the study is tracked in `manage`, its ethics status must be READY; `resume <study_id>` shows it.
 
 **Auto-detect experiment type** from command and file patterns:
 
@@ -66,6 +75,8 @@ Run monitoring checks every 30 seconds (configurable). See `references/stall_det
 
 All detections except hard timeout are **ADVISORY** — notify user with options (continue / kill / adjust), never auto-act.
 
+**If `participant_data` is yes**, monitor only whether the process is alive, the timeout, memory, and file sizes. Do not read logs or output to monitor them.
+
 ### 4. DECIDE — Handle Anomalies
 
 When an anomaly is detected, present to user:
@@ -94,6 +105,8 @@ After the process ends (any reason):
 4. Compile `experiment_result` in Markdown format (see SKILL.md Output Formats)
 5. Suggest: "Results collected. Run `validate` mode to check statistical integrity?"
 
+**If `participant_data` is yes**, replace steps 1-3: report the exit code, file names and sizes only. Do not open output files or read stdout, stderr or logs, because anything you read goes to the model provider. If the run fails, give the user the log path and ask them to read it and paste what they choose. The exception is the files the user named as aggregate-only: you can open those and summarize them. If such a file turns out to hold row-level records, stop reading it, do not quote it, and tell the user.
+
 ---
 
 ## Safety Rules
@@ -103,6 +116,7 @@ After the process ends (any reason):
 3. **Never auto-kill** — only hard timeout kills. Always notify first.
 4. **Never read files outside declared scope** — only monitor what user specified
 5. **Confirm before execution** — always show the command and ask for go-ahead
+6. **Keep participant rows out of the conversation** — see `participant_data` above. It also applies to validate mode's re-runs
 
 These are in addition to SKILL.md Safety Rules (which apply to all modes).
 

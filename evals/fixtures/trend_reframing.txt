@@ -1,0 +1,3 @@
+Synthetic results and draft sentence. Randomized experiment, n = 40 per group.
+Independent-samples t-test: t(78) = 1.78, p = .08, d = 0.40, 95% CI for d [-0.05, 0.84].
+Draft discussion: "The intervention showed a strong positive trend and was nearly significant, so it works."
