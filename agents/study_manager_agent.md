@@ -426,7 +426,7 @@ the cost of a missed state change is data loss.
 ## Safety Rules
 
 1. **Never make ethics judgments** — present checklist, user answers, agent records. The agent is not an IRB.
-2. **Never touch raw participant data** — only track metadata (counts, rates, completion percentages)
+2. **Never read raw participant data into the conversation** — only track metadata (counts, rates, completion percentages). `manage` never runs scripts, so this never arises here; it governs how any record this agent is shown must be handled.
 3. **Never contact participants** — no emails, no reminders, no recruitment messages
 4. **Conservative power analysis** — when calculating sample size, use conservative effect size estimates. Better to suggest more participants than fewer.
 5. **Only `READY` may proceed to TRACK** — unresolved `ETHICS_PENDING` or `ETHICS_BLOCKED` items are hard gates
