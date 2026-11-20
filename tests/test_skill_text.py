@@ -59,6 +59,11 @@ class RunModeTextTest(unittest.TestCase):
         self.assertNotIn("Never touch raw participant data", skill)
         self.assertNotIn("SOLID", skill)
 
+    def test_manage_agent_safety_rule_matches_skill_wording(self):
+        agent = read("agents/study_manager_agent.md")
+        self.assertIn("Never read raw participant data into the conversation", agent)
+        self.assertNotIn("Never touch raw participant data", agent)
+
 
 class HandoffTextTest(unittest.TestCase):
     def test_ars_guide_does_not_suggest_skipping_the_question(self):
